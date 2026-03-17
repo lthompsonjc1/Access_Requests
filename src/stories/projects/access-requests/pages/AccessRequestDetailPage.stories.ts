@@ -99,7 +99,6 @@ const AccessRequestDetailPage = defineComponent({
       request,
       detailsCollapsed,
       showDenyDialog,
-      denyReason,
       isDenying,
       handleApprove,
       handleDeny,
@@ -121,7 +120,7 @@ const AccessRequestDetailPage = defineComponent({
         <TopBar showBackButton backButtonLabel="Access Requests" @back="() => {}" />
         <PageHeader
           :title="'Request: ' + request.resource + ' — ' + request.requestor"
-          subtitleText="Access Request · " + request.resourceType
+          :subtitleText="'Access Request · ' + request.resourceType"
         >
           <template #icon>
             <ClipboardDocumentCheckIcon class="size-7" />
