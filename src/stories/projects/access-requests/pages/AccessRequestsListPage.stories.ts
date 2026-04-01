@@ -452,7 +452,7 @@ const timedAccessColumns = [
     }),
   },
   {
-    field: 'timeRemaining',
+    field: 'timeRemainingLabel',
     header: 'Time Remaining',
     sortable: true,
     width: '160px',
@@ -506,7 +506,7 @@ const deviceAdminSessionColumns = [
     }),
   },
   {
-    field: 'timeRemaining',
+    field: 'timeRemainingLabel',
     header: 'Time Remaining',
     sortable: true,
     width: '160px',

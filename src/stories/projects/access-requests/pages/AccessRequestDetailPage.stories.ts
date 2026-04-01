@@ -86,6 +86,7 @@ const AccessRequestDetailPage = defineComponent({
       request.value.approver = 'Admin User';
       request.value.decidedAt = 'Mar 9, 2026';
       request.value.denialReason = 'Access request denied by administrator.';
+      showDenyDialog.value = false;
     }
 
     return {
