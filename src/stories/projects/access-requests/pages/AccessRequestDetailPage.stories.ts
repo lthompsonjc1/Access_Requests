@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/vue3';
-import { ref, markRaw, defineComponent } from 'vue';
+import { ref, defineComponent } from 'vue';
 import {
   AppNavigation,
   PageHeader,
@@ -70,7 +70,6 @@ const AccessRequestDetailPage = defineComponent({
     const request = ref({ ...accessRequest });
     const detailsCollapsed = ref(false);
     const showDenyDialog = ref(false);
-    const isDenying = ref(false);
 
     function handleApprove() {
       request.value.status = 'Approved';
@@ -82,25 +81,17 @@ const AccessRequestDetailPage = defineComponent({
       showDenyDialog.value = true;
     }
 
-    /** Async deny: must use `actionHandler` so the dialog stays open until `close()` runs (see SeverityDialog). */
-    function handleDenyConfirm(close: () => void) {
-      isDenying.value = true;
-      setTimeout(() => {
-        request.value.status = 'Denied';
-        request.value.approver = 'Admin User';
-        request.value.decidedAt = 'Mar 9, 2026';
-        request.value.denialReason = 'Access request denied by administrator.';
-        isDenying.value = false;
-        close();
-      }, 500);
-      return false;
+    function handleDenyConfirm() {
+      request.value.status = 'Denied';
+      request.value.approver = 'Admin User';
+      request.value.decidedAt = 'Mar 9, 2026';
+      request.value.denialReason = 'Access request denied by administrator.';
     }
 
     return {
       request,
       detailsCollapsed,
       showDenyDialog,
-      isDenying,
       handleApprove,
       handleDeny,
       handleDenyConfirm,
@@ -247,8 +238,7 @@ const AccessRequestDetailPage = defineComponent({
         dialog-content="Please confirm you want to **deny** this access request."
         action-text="Deny Request"
         cancel-text="Cancel"
-        :is-loading="isDenying"
-        :action-handler="handleDenyConfirm"
+        @action="handleDenyConfirm"
         @cancel="showDenyDialog = false"
       />
     </div>

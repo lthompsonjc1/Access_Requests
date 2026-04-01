@@ -223,7 +223,7 @@ const statusTokenMapping: Record<string, { label: string; severity: string }> = 
   'Missing Data': { label: 'MISSING DATA', severity: 'danger' },
   Pending: { label: 'PENDING', severity: 'warn' },
   Approved: { label: 'APPROVED', severity: 'success' },
-  Denied: { label: 'DENIED', severity: 'secondary' },
+  Denied: { label: 'DENIED', severity: 'danger' },
   Expired: { label: 'EXPIRED', severity: 'secondary' },
 };
 
@@ -370,21 +370,9 @@ const FlowEnabledStatusCell = defineComponent({
   `,
 });
 
-const TimedAccessRevokeCell = defineComponent({
-  name: 'TimedAccessRevokeCell',
-  components: { Button },
-  props: {
-    sessionId: { type: String, required: true },
-  },
-  template: `
-    <div class="flex items-center justify-end p-2 min-h-12">
-      <Button label="Revoke" severity="danger" variant="outlined" size="small" :aria-label="'Revoke session ' + sessionId" />
-    </div>
-  `,
-});
-
-const DeviceAdminRevokeCell = defineComponent({
-  name: 'DeviceAdminRevokeCell',
+/** Timed Access + Device Admin active-session tables (same cell) */
+const ActiveSessionRevokeCell = defineComponent({
+  name: 'ActiveSessionRevokeCell',
   components: { Button },
   props: {
     sessionId: { type: String, required: true },
@@ -477,7 +465,7 @@ const timedAccessColumns = [
     field: 'actions',
     header: '',
     width: '120px',
-    component: markRaw(TimedAccessRevokeCell),
+    component: markRaw(ActiveSessionRevokeCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       sessionId: sp.data.id as string,
     }),
@@ -531,7 +519,7 @@ const deviceAdminSessionColumns = [
     field: 'actions',
     header: '',
     width: '120px',
-    component: markRaw(DeviceAdminRevokeCell),
+    component: markRaw(ActiveSessionRevokeCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       sessionId: sp.data.id as string,
     }),
