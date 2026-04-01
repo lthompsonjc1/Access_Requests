@@ -82,6 +82,7 @@ const AccessRequestDetailPage = defineComponent({
       showDenyDialog.value = true;
     }
 
+    /** Async deny: must use `actionHandler` so the dialog stays open until `close()` runs (see SeverityDialog). */
     function handleDenyConfirm(close: () => void) {
       isDenying.value = true;
       setTimeout(() => {

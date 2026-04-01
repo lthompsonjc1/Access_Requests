@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/vue3';
-import { ref, computed, markRaw, defineComponent } from 'vue';
+import { ref, computed, markRaw, defineComponent, watch } from 'vue';
 import {
   AppNavigation,
   PageHeader,
@@ -7,30 +7,64 @@ import {
   DataTableToolbar,
   DataTableCellLink,
   DataTableCellText,
-  DataTableCellButton,
   FilterModal,
+  FormField,
   LinkText,
+  MessageNotification,
+  ToggleSwitch,
+  CheckboxWithLabel,
 } from '@jumpcloud/circuit/components';
+import Menu from 'primevue/menu';
 import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
 import Button from 'primevue/button';
-import { ArrowTopRightOnSquareIcon, ClipboardDocumentCheckIcon, Cog6ToothIcon, EllipsisHorizontalIcon, EllipsisVerticalIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline';
+import Checkbox from 'primevue/checkbox';
+import Dialog from 'primevue/dialog';
+import Divider from 'primevue/divider';
+import IconField from 'primevue/iconfield';
+import InputIcon from 'primevue/inputicon';
+import InputText from 'primevue/inputtext';
+import {
+  ArrowTopRightOnSquareIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ClipboardDocumentCheckIcon,
+  Cog6ToothIcon,
+  EllipsisHorizontalIcon,
+  EllipsisVerticalIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+  MagnifyingGlassIcon,
+  TrashIcon,
+  XCircleIcon,
+  XMarkIcon,
+} from '@heroicons/vue/24/outline';
 import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 import DetailsKeyValue from '@/components/DetailsKeyValue.vue';
 import TopBar from '@/components/TopBar.vue';
 import { menuItems, profileMenuItems } from '../shared/navigation';
+import {
+  WEBHOOK_ACCESS_EVENT_DEFINITIONS,
+  createDefaultSettingsWebhookChannels,
+  isWebhookChannelSelectAllChecked,
+  isWebhookChannelSelectAllIndeterminate,
+  setAllWebhookChannelEvents,
+  webhookChannelEventsTagLabel,
+} from '../shared/webhookChannelSettings';
 
 // ─── Types ───
 
 interface AccessRequest {
   id: number;
   received: string;
-  type: string;
+  /** Request type: resource (app) approval vs device administration */
+  type: 'Resource Approval' | 'Device Admin';
   name: string;
   requester: string;
   department: string;
-  approvalType: string;
+  /** Approval mode: Manual or Automatic */
+  approvalType: 'Manual' | 'Automatic';
   status: 'Error' | 'Missing Data' | 'Pending' | 'Approved' | 'Denied' | 'Expired';
   /** Expanded view fields */
   approvalTitle: string;
@@ -39,6 +73,9 @@ interface AccessRequest {
   reasonForRequest: string;
   approver: string;
   approvalProgressStatus: string;
+  /** Others tab: progress counts (1–3 approvers) */
+  approvedCount?: number;
+  totalApprovers?: number;
   /** Missing Data expanded view */
   approvalFlowDescription?: string;
   approvalSteps?: Array<{
@@ -49,19 +86,134 @@ interface AccessRequest {
   }>;
 }
 
+/** Approval Flows tab — configuration rows (not request queue items) */
+interface ApprovalFlowRow {
+  id: string;
+  name: string;
+  flowType: 'Device Admin' | 'Resource Approval';
+  /** Resource Approval flows only; Device Admin flows omit assignment (shown as --) */
+  userGroupAssignment: string;
+  approvalMode: 'Manual' | 'Automatic';
+  /** Shown in Status column (toggle + label) */
+  enabled: boolean;
+  /** Row expansion: intro copy */
+  expansionDescription?: string;
+  /** Row expansion: horizontal approval steps */
+  configurationSteps?: Array<{ name: string; roleLabel: string }>;
+}
+
+const initialApprovalFlows: ApprovalFlowRow[] = [
+  {
+    id: 'f-admins',
+    name: 'Confluence - Admins',
+    flowType: 'Resource Approval',
+    userGroupAssignment: 'Confluence For Admins',
+    approvalMode: 'Manual',
+    enabled: true,
+    expansionDescription:
+      "Approval Flow description goes here. A long description can fit and if necessary it can even wrap but I don't think that will be neccessary.",
+    configurationSteps: [
+      { name: 'Katana Blade', roleLabel: 'Required Approver' },
+      { name: 'Johnny Cage', roleLabel: 'Optional Approver' },
+    ],
+  },
+  { id: 'f1', name: 'Sudo Admin - 1 hr', flowType: 'Device Admin', userGroupAssignment: '', approvalMode: 'Manual', enabled: true },
+  { id: 'f2', name: 'Confluence - Users', flowType: 'Resource Approval', userGroupAssignment: 'Confluence For Users', approvalMode: 'Manual', enabled: true },
+  { id: 'f3', name: 'UX Tools', flowType: 'Resource Approval', userGroupAssignment: 'Design Tools', approvalMode: 'Automatic', enabled: true },
+  { id: 'f4', name: 'DEV Tools', flowType: 'Device Admin', userGroupAssignment: '', approvalMode: 'Automatic', enabled: true },
+];
+
+/** Active Sessions — Timed Access tab */
+interface TimedAccessSessionRow {
+  id: string;
+  user: string;
+  approvalFlow: string;
+  groupAssignment: string;
+  timeRemainingLabel: string;
+}
+
+/** Active Sessions — Device Admin tab */
+interface DeviceAdminSessionRow {
+  id: string;
+  user: string;
+  device: string;
+  os: string;
+  /** Remaining time label — same format as Timed Access (e.g. 4h:23m, 6d:23h:18m) */
+  timeRemainingLabel: string;
+}
+
+const TIMED_ACCESS_TOTAL_MOCK = 300;
+
+function buildTimedAccessRows(): TimedAccessSessionRow[] {
+  const rows: TimedAccessSessionRow[] = [
+    {
+      id: 'ts-1',
+      user: 'Morgan Ellis',
+      approvalFlow: 'SalesForce Admins',
+      groupAssignment: 'SalesForce_Admins_Only',
+      timeRemainingLabel: '4h:23m',
+    },
+    {
+      id: 'ts-2',
+      user: 'Ravi Kumar',
+      approvalFlow: 'SalesForce Admins',
+      groupAssignment: 'SalesForce_Admins_Only',
+      timeRemainingLabel: '6d:23h:18m',
+    },
+    {
+      id: 'ts-3',
+      user: 'Casey Nguyen',
+      approvalFlow: 'SalesForce Admins',
+      groupAssignment: 'SalesForce_Admins_Only',
+      timeRemainingLabel: '2d:5h:12m',
+    },
+  ];
+  const users = ['Jordan Lee', 'Sam Patel', 'Taylor Brooks', 'Riley Chen', 'Devon White'];
+  const flows = ['SalesForce Admins', 'Confluence - Users', 'UX Tools', 'DEV Tools'];
+  const groups = ['SalesForce_Admins_Only', 'Confluence_For_Users', 'Design_Tools', 'Dev_Tools_Access'];
+  const times = ['4h:23m', '6d:23h:18m', '12h:30m', '1d:2h:0m', '3d:0h:45m'];
+  for (let i = rows.length; i < TIMED_ACCESS_TOTAL_MOCK; i++) {
+    rows.push({
+      id: `ts-${i + 1}`,
+      user: `${users[i % users.length]} (${i + 1})`,
+      approvalFlow: flows[i % flows.length],
+      groupAssignment: groups[i % groups.length],
+      timeRemainingLabel: times[i % times.length],
+    });
+  }
+  return rows;
+}
+
+const deviceAdminSessionsData: DeviceAdminSessionRow[] = [
+  { id: 'da-1', user: 'Jamie Rivera', device: 'MacBook Pro #4421', os: 'macOS', timeRemainingLabel: '4h:23m' },
+  { id: 'da-2', user: 'Mel Park', device: 'Windows VM #882', os: 'Windows', timeRemainingLabel: '0h:45m' },
+  { id: 'da-3', user: 'Avery Singh', device: 'Linux server prod-03', os: 'Linux', timeRemainingLabel: '12h:7m' },
+  { id: 'da-4', user: 'Quinn Frost', device: 'Chromebook fleet #1204', os: 'Chrome OS', timeRemainingLabel: '23h:59m' },
+];
+
 // ─── Mock Data (matches image) ───
 
 const accessRequestsData: AccessRequest[] = [
-  { id: 1, received: 'January 27, 2026 at 9:11 AM', type: 'Resource', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: '3', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 2, received: 'January 19, 2026 at 10:11 AM', type: 'Resource', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Design project', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 3, received: 'January 12, 2026 at 10:31 AM', type: 'Resource', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'UX research', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 4, received: 'December 18, 2025 at 6:38 AM', type: 'Resource', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Prototyping', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 5, received: 'December 18, 2025 at 6:36 AM', type: 'Resource', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Collaboration', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 6, received: 'December 15, 2025 at 2:14 PM', type: 'Resource', name: 'Onboarding Resources for new employees', requester: 'Julian Upton', department: 'Product', approvalType: 'Manual', status: 'Missing Data', approvalTitle: 'Onboarding Resources for new employees', manager: 'Not Provided', duration: '30 Days', reasonForRequest: 'lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval', approvalFlowDescription: 'Approval Flow description goes here. Truncate longer descriptions. Let\'s try a max width 800px. Include show more link', approvalSteps: [{ type: 'actionRequired', approver: 'Manager Missing', status: 'Action Required', actionLink: { label: 'Add in users', href: '#' } }, { type: 'pending', approver: 'Johnny Cage', status: 'Pending Required Approval' }] },
-  { id: 7, received: 'December 10, 2025 at 11:22 AM', type: 'Resource', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Approved', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Design sprint', approver: 'Lorie Thompson', approvalProgressStatus: 'Approved' },
-  { id: 8, received: 'December 5, 2025 at 9:00 AM', type: 'Resource', name: 'Jira', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Jira Project Access', manager: 'Sarah Chen', duration: '90 Days', reasonForRequest: 'Project management', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 9, received: 'November 28, 2025 at 3:45 PM', type: 'Resource', name: 'Confluence', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Denied', approvalTitle: 'Confluence Space Access', manager: 'Sarah Chen', duration: '30 Days', reasonForRequest: 'Documentation', approver: 'Lorie Thompson', approvalProgressStatus: 'Denied' },
-  { id: 10, received: 'November 15, 2025 at 10:00 AM', type: 'Resource', name: 'GitHub', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Expired', approvalTitle: 'GitHub Repository Access', manager: 'Sarah Chen', duration: '60 Days', reasonForRequest: 'Code review', approver: 'Lorie Thompson', approvalProgressStatus: 'Expired' },
+  { id: 1, received: 'January 27, 2026 at 9:11 AM', type: 'Device Admin', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Timed access for design review tasks', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
+  { id: 2, received: 'January 19, 2026 at 10:11 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Design project', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
+  { id: 3, received: 'January 12, 2026 at 10:31 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'UX research', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
+  { id: 4, received: 'December 18, 2025 at 6:38 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Prototyping', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
+  { id: 5, received: 'December 18, 2025 at 6:36 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Collaboration', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
+  { id: 6, received: 'December 15, 2025 at 2:14 PM', type: 'Resource Approval', name: 'Onboarding Resources for new employees', requester: 'Julian Upton', department: 'Product', approvalType: 'Manual', status: 'Missing Data', approvalTitle: 'Onboarding Resources for new employees', manager: 'Not Provided', duration: '30 Days', reasonForRequest: 'lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval', approvalFlowDescription: 'Approval Flow description goes here. Truncate longer descriptions. Let\'s try a max width 800px. Include show more link', approvalSteps: [{ type: 'actionRequired', approver: 'Manager Missing', status: 'Action Required', actionLink: { label: 'Add in users', href: '#' } }, { type: 'pending', approver: 'Johnny Cage', status: 'Pending Required Approval' }] },
+  { id: 7, received: 'December 10, 2025 at 11:22 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Approved', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Design sprint', approver: 'Lorie Thompson', approvalProgressStatus: 'Approved' },
+  { id: 8, received: 'December 5, 2025 at 9:00 AM', type: 'Resource Approval', name: 'Jira', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Jira Project Access', manager: 'Sarah Chen', duration: '90 Days', reasonForRequest: 'Project management', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
+  { id: 9, received: 'November 28, 2025 at 3:45 PM', type: 'Resource Approval', name: 'Confluence', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Denied', approvalTitle: 'Confluence Space Access', manager: 'Sarah Chen', duration: '30 Days', reasonForRequest: 'Documentation', approver: 'Lorie Thompson', approvalProgressStatus: 'Denied' },
+  { id: 10, received: 'November 15, 2025 at 10:00 AM', type: 'Resource Approval', name: 'GitHub', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Expired', approvalTitle: 'GitHub Repository Access', manager: 'Sarah Chen', duration: '60 Days', reasonForRequest: 'Code review', approver: 'Lorie Thompson', approvalProgressStatus: 'Expired' },
+];
+
+// Mock data for Others tab (non-admin approvers / multi-step approvals)
+// Progress: 0–3 of 1–3 approvals depending on configured approval flow
+const othersRequestsData: AccessRequest[] = [
+  { id: 11, received: 'March 17, 2026 at 2:30 PM', type: 'Device Admin', name: 'TESTING timed access', requester: 'Jessica Rabbit (End User)', department: 'Engineering', approvalType: 'Manual', status: 'Pending', approvalTitle: 'TESTING timed access', manager: 'Sarah Chen', duration: '30 Days', reasonForRequest: 'Testing access flow', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 0, totalApprovers: 1 },
+  { id: 12, received: 'March 2, 2026 at 10:15 AM', type: 'Resource Approval', name: 'Serhat Test App', requester: 'Serhat Can', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Serhat Test App', manager: 'Not Provided', duration: 'N/A', reasonForRequest: 'need access to serhat app please please!!!', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 0, totalApprovers: 2 },
+  { id: 13, received: 'March 1, 2026 at 9:00 AM', type: 'Resource Approval', name: 'Design System Access', requester: 'Alex Chen', department: 'Design', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Design System Access', manager: 'Jane Doe', duration: '90 Days', reasonForRequest: 'Design project', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 1, totalApprovers: 2 },
+  { id: 14, received: 'February 28, 2026 at 9:00 AM', type: 'Resource Approval', name: 'Repo Access', requester: 'Sam Dev', department: 'Engineering', approvalType: 'Manual', status: 'Approved', approvalTitle: 'Repo Access', manager: 'Tech Lead', duration: '365 Days', reasonForRequest: 'Code contribution', approver: 'Barış Ermut', approvalProgressStatus: 'Approved', approvedCount: 1, totalApprovers: 1 },
+  { id: 15, received: 'February 25, 2026 at 2:00 PM', type: 'Resource Approval', name: 'Multi-step Flow', requester: 'Test User', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Multi-step Flow', manager: 'Manager', duration: '30 Days', reasonForRequest: 'Testing', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 2, totalApprovers: 3 },
 ];
 
 // ─── Status Cell ───
@@ -74,6 +226,30 @@ const statusTokenMapping: Record<string, { label: string; severity: string }> = 
   Denied: { label: 'DENIED', severity: 'secondary' },
   Expired: { label: 'EXPIRED', severity: 'secondary' },
 };
+
+// ─── Progress Cell (Others tab: "X of Y approval(s)") ───
+
+const ProgressCell = defineComponent({
+  name: 'ProgressCell',
+  props: {
+    approvedCount: { type: Number, default: 0 },
+    totalApprovers: { type: Number, default: 1 },
+  },
+  setup(props) {
+    const label = computed(() => {
+      const approved = props.approvedCount ?? 0;
+      const total = props.totalApprovers ?? 1;
+      const suffix = total === 1 ? 'approval' : 'approvals';
+      return `${approved} of ${total} ${suffix}`;
+    });
+    return { label };
+  },
+  template: `
+    <div class="flex items-center p-2 min-h-12">
+      <span class="text-body-md text-neutral-base">{{ label }}</span>
+    </div>
+  `,
+});
 
 // ─── Status Cell (DataTableCellToken hardcodes green for Status type; use Tag with mapping) ───
 
@@ -97,9 +273,275 @@ const StatusCell = defineComponent({
   `,
 });
 
-// ─── Column Definitions (order matches image) ───
+// ─── Actions Cell (Grant Access / Deny Access for Pending, disabled otherwise) ───
 
-const columns = [
+const ActionsCell = defineComponent({
+  name: 'ActionsCell',
+  components: { Button, Menu, EllipsisVerticalIcon },
+  props: {
+    status: { type: String, required: true },
+    requestId: { type: Number, required: true },
+  },
+  setup(props) {
+    const menuRef = ref<InstanceType<typeof Menu> | null>(null);
+    const hasActions = computed(
+      () => props.status === 'Pending' || props.status === 'Missing Data',
+    );
+
+    const menuItems = computed(() => [
+      { label: 'Grant Access', command: () => {} },
+      { label: 'Deny Access', command: () => {} },
+    ]);
+
+    function toggleMenu(event: Event) {
+      if (hasActions.value && menuRef.value) {
+        menuRef.value.toggle(event);
+      }
+    }
+
+    return { menuRef, hasActions, menuItems, toggleMenu };
+  },
+  template: `
+    <div class="flex items-center p-2 min-h-12">
+      <Button
+        variant="text"
+        severity="secondary"
+        size="small"
+        :disabled="!hasActions"
+        :aria-disabled="!hasActions"
+        aria-label="Row actions"
+        @click="toggleMenu"
+      >
+        <template #icon>
+          <EllipsisVerticalIcon class="size-4" />
+        </template>
+      </Button>
+      <Menu ref="menuRef" :model="menuItems" :popup="true" />
+    </div>
+  `,
+});
+
+// ─── Approval Flows tab cells ───
+
+const FlowNameCell = defineComponent({
+  name: 'FlowNameCell',
+  props: {
+    name: { type: String, required: true },
+  },
+  setup(props) {
+    const letter = computed(() => props.name.charAt(0).toUpperCase() || '?');
+    return { letter };
+  },
+  template: `
+    <div class="flex items-center gap-sm p-2 min-h-12 min-w-0">
+      <div class="size-8 shrink-0 rounded flex items-center justify-center bg-info-surface border border-info-base/20">
+        <span class="text-body-sm font-bold text-info-base">{{ letter }}</span>
+      </div>
+      <span class="text-body-md text-neutral-base truncate">{{ name }}</span>
+    </div>
+  `,
+});
+
+const FlowEnabledStatusCell = defineComponent({
+  name: 'FlowEnabledStatusCell',
+  components: { ToggleSwitch, InformationCircleIcon },
+  props: {
+    enabled: { type: Boolean, default: true },
+    flowId: { type: String, required: true },
+    onToggle: {
+      type: Function as unknown as () => (flowId: string, nextEnabled: boolean) => void,
+      required: true,
+    },
+  },
+  template: `
+    <div class="flex min-w-0 items-center gap-sm p-2 min-h-12">
+      <ToggleSwitch
+        :model-value="enabled"
+        aria-label="Toggle approval flow enabled"
+        @update:model-value="onToggle(flowId, $event)"
+      />
+      <span class="text-body-md shrink-0 text-neutral-base">{{ enabled ? 'Enabled' : 'Disabled' }}</span>
+      <InformationCircleIcon
+        v-tooltip.top="'When enabled, this approval flow runs for matching access requests.'"
+        class="size-4 shrink-0 text-neutral-subtle"
+        aria-hidden="true"
+      />
+    </div>
+  `,
+});
+
+const TimedAccessRevokeCell = defineComponent({
+  name: 'TimedAccessRevokeCell',
+  components: { Button },
+  props: {
+    sessionId: { type: String, required: true },
+  },
+  template: `
+    <div class="flex items-center justify-end p-2 min-h-12">
+      <Button label="Revoke" severity="danger" variant="outlined" size="small" :aria-label="'Revoke session ' + sessionId" />
+    </div>
+  `,
+});
+
+const DeviceAdminRevokeCell = defineComponent({
+  name: 'DeviceAdminRevokeCell',
+  components: { Button },
+  props: {
+    sessionId: { type: String, required: true },
+  },
+  template: `
+    <div class="flex items-center justify-end p-2 min-h-12">
+      <Button label="Revoke" severity="danger" variant="outlined" size="small" :aria-label="'Revoke session ' + sessionId" />
+    </div>
+  `,
+});
+
+const FlowActionsCell = defineComponent({
+  name: 'FlowActionsCell',
+  components: { Button, Menu, EllipsisVerticalIcon },
+  setup() {
+    const menuRef = ref<InstanceType<typeof Menu> | null>(null);
+    const menuItems = computed(() => [
+      { label: 'Edit', command: () => {} },
+      { label: 'Duplicate', command: () => {} },
+      { label: 'Delete', command: () => {} },
+    ]);
+    function toggleMenu(event: Event) {
+      menuRef.value?.toggle(event);
+    }
+    return { menuRef, menuItems, toggleMenu };
+  },
+  template: `
+    <div class="flex items-center p-2 min-h-12">
+      <Button
+        variant="text"
+        severity="secondary"
+        size="small"
+        aria-label="Row actions"
+        @click="toggleMenu"
+      >
+        <template #icon>
+          <EllipsisVerticalIcon class="size-4" />
+        </template>
+      </Button>
+      <Menu ref="menuRef" :model="menuItems" :popup="true" />
+    </div>
+  `,
+});
+
+const timedAccessColumns = [
+  {
+    field: 'user',
+    header: 'User',
+    sortable: true,
+    width: '180px',
+    component: markRaw(DataTableCellLink),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.user as string,
+      href: '#',
+    }),
+  },
+  {
+    field: 'approvalFlow',
+    header: 'Approval Flow',
+    sortable: true,
+    width: '200px',
+    component: markRaw(DataTableCellLink),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.approvalFlow as string,
+      href: '#',
+    }),
+  },
+  {
+    field: 'groupAssignment',
+    header: 'Group Assignment',
+    sortable: true,
+    width: '220px',
+    component: markRaw(DataTableCellLink),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.groupAssignment as string,
+      href: '#',
+    }),
+  },
+  {
+    field: 'timeRemaining',
+    header: 'Time Remaining',
+    sortable: true,
+    width: '160px',
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.timeRemainingLabel as string,
+    }),
+  },
+  {
+    field: 'actions',
+    header: '',
+    width: '120px',
+    component: markRaw(TimedAccessRevokeCell),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      sessionId: sp.data.id as string,
+    }),
+  },
+];
+
+const deviceAdminSessionColumns = [
+  {
+    field: 'user',
+    header: 'User',
+    sortable: true,
+    width: '200px',
+    component: markRaw(DataTableCellLink),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.user as string,
+      href: '#',
+    }),
+  },
+  {
+    field: 'device',
+    header: 'Device',
+    sortable: true,
+    width: '220px',
+    component: markRaw(DataTableCellLink),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.device as string,
+      href: '#',
+    }),
+  },
+  {
+    field: 'os',
+    header: 'OS',
+    sortable: true,
+    width: '140px',
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.os as string,
+    }),
+  },
+  {
+    field: 'timeRemaining',
+    header: 'Time Remaining',
+    sortable: true,
+    width: '160px',
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.timeRemainingLabel as string,
+    }),
+  },
+  {
+    field: 'actions',
+    header: '',
+    width: '120px',
+    component: markRaw(DeviceAdminRevokeCell),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      sessionId: sp.data.id as string,
+    }),
+  },
+];
+
+// ─── Column Definitions (order matches image) ───
+// Progress column only shown for Others tab (multi-step approvals); Administrator approves all directly
+
+const allColumns = [
   {
     field: 'received',
     header: 'Received',
@@ -153,12 +595,23 @@ const columns = [
   },
   {
     field: 'approvalType',
-    header: 'Approval Type',
+    header: 'Approval Mode',
     sortable: true,
     width: '140px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.approvalType as string,
+    }),
+  },
+  {
+    field: 'approvalProgressStatus',
+    header: 'Progress',
+    sortable: true,
+    width: '180px',
+    component: markRaw(ProgressCell),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      approvedCount: (sp.data.approvedCount as number) ?? 0,
+      totalApprovers: (sp.data.totalApprovers as number) ?? 1,
     }),
   },
   {
@@ -176,12 +629,10 @@ const columns = [
     field: 'actions',
     header: '',
     width: '60px',
-    component: markRaw(DataTableCellButton),
-    componentProps: () => ({
-      type: 'Button Group',
-      iconButtons: [{ icon: markRaw(EllipsisVerticalIcon) }],
-      maxVisibleIconButtons: 1,
-      size: 'default',
+    component: markRaw(ActionsCell),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      status: sp.data.status as string,
+      requestId: sp.data.id as number,
     }),
   },
 ];
@@ -194,6 +645,15 @@ const basicFilters = [
     label: 'Requester',
     type: 'text' as const,
     placeholder: 'Search requester...',
+  },
+  {
+    id: 'approvalType',
+    label: 'Approval Mode',
+    type: 'singleSelect' as const,
+    options: [
+      { label: 'Manual', value: 'Manual' },
+      { label: 'Automatic', value: 'Automatic' },
+    ],
   },
   {
     id: 'status',
@@ -213,8 +673,14 @@ const basicFilters = [
 // ─── Main tabs and sub-tabs ───
 
 const mainTabs = [
-  { label: 'Request Queue (5)', value: 'request-queue' },
-  { label: 'Approval Flows (25)', value: 'approval-flows' },
+  { label: 'Request Queue (6)', value: 'request-queue' },
+  { label: 'Active Sessions (7)', value: 'active-sessions' },
+  { label: 'Approval Flows (5)', value: 'approval-flows' },
+];
+
+const activeSessionsSubTabOptions = [
+  { label: 'Device Admin (4)', value: 'device-admin' },
+  { label: 'Timed Access (3)', value: 'timed-access' },
 ];
 
 const subTabOptions = [
@@ -229,44 +695,409 @@ const exportOptions = [
   { id: 'xlsx', label: 'Export as Excel' },
 ];
 
-// ─── Initial active filters (matches image) ───
+// ─── Initial active filters ───
 
 const initialFilters = [
-  { key: 'Status', operator: 'is', value: 'Error', id: 'filter-1' },
+  { key: 'Approval Mode', operator: 'is', value: 'Manual', id: 'filter-1' },
   { key: 'Status', operator: 'is', value: 'Pending', id: 'filter-2' },
+  { key: 'Status', operator: 'is', value: 'Error', id: 'filter-3' },
 ];
+
+function formatGroupedValues(values: string[], maxVisible = 2): string {
+  if (values.length <= maxVisible) return values.join(', ');
+  return `${values.slice(0, maxVisible).join(', ')}, +${values.length - maxVisible}`;
+}
+
+function sortedStringArrayEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
 
 // ─── Component ───
 
 const AccessRequestsListPage = defineComponent({
   name: 'AccessRequestsListPage',
+  props: {
+    initialSubTab: { type: String as () => 'administrator' | 'others', default: 'administrator' },
+    initialMainTab: {
+      type: String as () => 'request-queue' | 'active-sessions' | 'approval-flows',
+      default: 'request-queue',
+    },
+    initialActiveSessionsSubTab: {
+      type: String as () => 'device-admin' | 'timed-access',
+      default: 'device-admin',
+    },
+  },
   components: {
     AppNavigation,
     PageHeader,
     CircuitDataTable: DataTable,
     DataTableToolbar,
     FilterModal,
+    FormField,
     TopBar,
     SelectButton,
     Button,
+    ToggleSwitch,
     DetailsKeyValue,
     LinkText,
+    MessageNotification,
+    Checkbox,
+    CheckboxWithLabel,
+    Divider,
+    Dialog,
+    IconField,
+    InputIcon,
+    InputText,
     ArrowTopRightOnSquareIcon,
     CheckCircleIcon,
+    ChevronDownIcon,
+    ChevronUpIcon,
     ClipboardDocumentCheckIcon,
     Cog6ToothIcon,
+    Menu,
     EllipsisHorizontalIcon,
     ExclamationTriangleIcon,
+    InformationCircleIcon,
+    MagnifyingGlassIcon,
+    TrashIcon,
+    XCircleIcon,
+    XMarkIcon,
   },
-  setup() {
+  setup(props) {
     const requests = ref<AccessRequest[]>([...accessRequestsData]);
     const showFilterModal = ref(false);
     const appliedFilters = ref(initialFilters);
-    const activeMainTab = ref('request-queue');
-    const activeSubTab = ref('administrator');
+    const activeMainTab = ref(props.initialMainTab);
+    const activeSubTab = ref(props.initialSubTab);
+    const activeSessionsSubTab = ref(props.initialActiveSessionsSubTab);
+    const showSettings = ref(false);
 
-    const currentPageData = computed(() => requests.value);
-    const totalRecords = computed(() => requests.value.length);
+    const timedAccessRows = ref<TimedAccessSessionRow[]>(buildTimedAccessRows());
+    const timedAccessSelection = ref<TimedAccessSessionRow[]>([]);
+    const deviceAdminRows = ref<DeviceAdminSessionRow[]>(deviceAdminSessionsData.map((r) => ({ ...r })));
+    const deviceAdminSelection = ref<DeviceAdminSessionRow[]>([]);
+    const activeSessionsActionsMenuRef = ref<InstanceType<typeof Menu> | null>(null);
+    const activeSessionsActionsMenuItems = ref([
+      { label: 'Revoke selected', command: () => {} },
+      { label: 'Export list', command: () => {} },
+    ]);
+
+    function toggleActiveSessionsActionsMenu(event: Event) {
+      activeSessionsActionsMenuRef.value?.toggle(event);
+    }
+
+    function handleActiveSessionsRefresh() {
+      // Story placeholder
+    }
+
+    function handleActiveSessionsSearch(_query: string) {
+      // Story placeholder
+    }
+
+    const accessRequestsOn = ref(true);
+    const notifyViaEmail = ref(true);
+    const notifyRequestReceived = ref(true);
+    const notifyApprovalDenial = ref(true);
+    const exposeApprovalProgress = ref(true);
+    const settingsWebhookChannels = ref(createDefaultSettingsWebhookChannels());
+    const showSelectChannelModal = ref(false);
+    const selectChannelSearch = ref('');
+    const selectChannelSelectedCount = ref(0);
+    const showRemoveWebhookChannelDialog = ref(false);
+    const webhookChannelIdPendingRemoval = ref<string | null>(null);
+
+    const approvalFlowsData = ref<ApprovalFlowRow[]>(
+      initialApprovalFlows.map((r) => ({
+        ...r,
+        configurationSteps: r.configurationSteps?.map((s) => ({ ...s })),
+      })),
+    );
+
+    const showApprovalFlowFilterDialog = ref(false);
+    const appliedFlowUserGroupSearch = ref('');
+    const draftFlowUserGroupSearch = ref('');
+    const appliedFlowTypes = ref<string[]>([]);
+    const draftFlowTypes = ref<string[]>([]);
+    const appliedFlowApprovalModes = ref<string[]>([]);
+    const draftFlowApprovalModes = ref<string[]>([]);
+    const appliedFlowStatuses = ref<string[]>([]);
+    const draftFlowStatuses = ref<string[]>([]);
+
+    const approvalFlowFilterFlowTypes = ['Device Admin', 'Resource Approval'] as const;
+    const approvalFlowFilterApprovalModes = ['Manual', 'Automatic'] as const;
+    const approvalFlowFilterStatuses = ['Enabled', 'Disabled'] as const;
+
+    const showDisableApprovalFlowDialog = ref(false);
+    const disableApprovalFlowIdPending = ref<string | null>(null);
+
+    function handleApprovalFlowToggle(flowId: string, nextEnabled: boolean) {
+      if (nextEnabled) {
+        const row = approvalFlowsData.value.find((r) => r.id === flowId);
+        if (row) row.enabled = true;
+        return;
+      }
+      disableApprovalFlowIdPending.value = flowId;
+      showDisableApprovalFlowDialog.value = true;
+    }
+
+    function closeDisableApprovalFlowDialog() {
+      showDisableApprovalFlowDialog.value = false;
+    }
+
+    function confirmDisableApprovalFlow() {
+      const id = disableApprovalFlowIdPending.value;
+      if (id) {
+        const row = approvalFlowsData.value.find((r) => r.id === id);
+        if (row) row.enabled = false;
+      }
+      showDisableApprovalFlowDialog.value = false;
+    }
+
+    watch(showDisableApprovalFlowDialog, (open) => {
+      if (!open) disableApprovalFlowIdPending.value = null;
+    });
+
+    const approvalFlowColumns = [
+      {
+        field: 'name',
+        header: 'Name',
+        sortable: true,
+        width: '280px',
+        component: markRaw(FlowNameCell),
+        componentProps: (sp: { data: Record<string, unknown> }) => ({
+          name: sp.data.name as string,
+        }),
+      },
+      {
+        field: 'flowType',
+        header: 'Flow Type',
+        sortable: true,
+        width: '168px',
+        component: markRaw(DataTableCellText),
+        componentProps: (sp: { data: Record<string, unknown> }) => ({
+          label: sp.data.flowType as string,
+        }),
+      },
+      {
+        field: 'userGroupAssignment',
+        header: 'User Group Assignment',
+        sortable: true,
+        width: '220px',
+        component: markRaw(DataTableCellText),
+        componentProps: (sp: { data: Record<string, unknown> }) => {
+          if (sp.data.flowType === 'Device Admin') {
+            return { label: '--' };
+          }
+          const raw = sp.data.userGroupAssignment as string;
+          return { label: raw?.trim() ? raw : '--' };
+        },
+      },
+      {
+        field: 'approvalMode',
+        header: 'Approval Mode',
+        sortable: true,
+        width: '140px',
+        component: markRaw(DataTableCellText),
+        componentProps: (sp: { data: Record<string, unknown> }) => ({
+          label: sp.data.approvalMode as string,
+        }),
+      },
+      {
+        field: 'status',
+        header: 'Status',
+        sortable: true,
+        width: '220px',
+        component: markRaw(FlowEnabledStatusCell),
+        componentProps: (sp: { data: Record<string, unknown> }) => ({
+          enabled: (sp.data.enabled as boolean) !== false,
+          flowId: sp.data.id as string,
+          onToggle: handleApprovalFlowToggle,
+        }),
+      },
+      {
+        field: 'actions',
+        header: '',
+        width: '56px',
+        component: markRaw(FlowActionsCell),
+        componentProps: () => ({}),
+      },
+    ];
+
+    const filteredApprovalFlows = computed(() => {
+      let rows = approvalFlowsData.value;
+      const q = appliedFlowUserGroupSearch.value.trim().toLowerCase();
+      if (q) {
+        rows = rows.filter((r) => r.userGroupAssignment.toLowerCase().includes(q));
+      }
+      if (appliedFlowTypes.value.length) {
+        rows = rows.filter((r) => appliedFlowTypes.value.includes(r.flowType));
+      }
+      if (appliedFlowApprovalModes.value.length) {
+        rows = rows.filter((r) => appliedFlowApprovalModes.value.includes(r.approvalMode));
+      }
+      if (appliedFlowStatuses.value.length) {
+        rows = rows.filter((r) =>
+          appliedFlowStatuses.value.includes(r.enabled ? 'Enabled' : 'Disabled'),
+        );
+      }
+      return rows;
+    });
+
+    const approvalFlowsTotalRecords = computed(() => filteredApprovalFlows.value.length);
+
+    const activeApprovalFlowFilterChips = computed(() => {
+      const chips: { id: string; key: string; operator: string; value: string }[] = [];
+      const search = appliedFlowUserGroupSearch.value.trim();
+      if (search) {
+        chips.push({
+          id: 'flowUserGroup',
+          key: 'User Group Assignment',
+          operator: 'contains',
+          value: search,
+        });
+      }
+      if (appliedFlowTypes.value.length) {
+        chips.push({
+          id: 'flowType',
+          key: 'Flow Type',
+          operator: 'is',
+          value: formatGroupedValues(appliedFlowTypes.value),
+        });
+      }
+      if (appliedFlowApprovalModes.value.length) {
+        chips.push({
+          id: 'flowApprovalMode',
+          key: 'Approval Mode',
+          operator: 'is',
+          value: formatGroupedValues(appliedFlowApprovalModes.value),
+        });
+      }
+      if (appliedFlowStatuses.value.length) {
+        chips.push({
+          id: 'flowStatus',
+          key: 'Status',
+          operator: 'is',
+          value: formatGroupedValues(appliedFlowStatuses.value),
+        });
+      }
+      return chips;
+    });
+
+    const approvalFlowFilterApplyDisabled = computed(
+      () =>
+        draftFlowUserGroupSearch.value.trim() === appliedFlowUserGroupSearch.value.trim() &&
+        sortedStringArrayEqual(draftFlowTypes.value, appliedFlowTypes.value) &&
+        sortedStringArrayEqual(draftFlowApprovalModes.value, appliedFlowApprovalModes.value) &&
+        sortedStringArrayEqual(draftFlowStatuses.value, appliedFlowStatuses.value),
+    );
+
+    function openApprovalFlowFilterDialog() {
+      draftFlowUserGroupSearch.value = appliedFlowUserGroupSearch.value;
+      draftFlowTypes.value = [...appliedFlowTypes.value];
+      draftFlowApprovalModes.value = [...appliedFlowApprovalModes.value];
+      draftFlowStatuses.value = [...appliedFlowStatuses.value];
+      showApprovalFlowFilterDialog.value = true;
+    }
+
+    function applyApprovalFlowFilters() {
+      appliedFlowUserGroupSearch.value = draftFlowUserGroupSearch.value;
+      appliedFlowTypes.value = [...draftFlowTypes.value];
+      appliedFlowApprovalModes.value = [...draftFlowApprovalModes.value];
+      appliedFlowStatuses.value = [...draftFlowStatuses.value];
+      showApprovalFlowFilterDialog.value = false;
+    }
+
+    function cancelApprovalFlowFilterDialog() {
+      showApprovalFlowFilterDialog.value = false;
+    }
+
+    function clearDraftApprovalFlowFilters() {
+      draftFlowUserGroupSearch.value = '';
+      draftFlowTypes.value = [];
+      draftFlowApprovalModes.value = [];
+      draftFlowStatuses.value = [];
+    }
+
+    function clearAllApprovalFlowFilters() {
+      appliedFlowUserGroupSearch.value = '';
+      appliedFlowTypes.value = [];
+      appliedFlowApprovalModes.value = [];
+      appliedFlowStatuses.value = [];
+    }
+
+    function removeApprovalFlowFilterChip(chip: { id?: string }) {
+      const chipId = chip.id ?? '';
+      if (chipId === 'flowUserGroup') appliedFlowUserGroupSearch.value = '';
+      else if (chipId === 'flowType') appliedFlowTypes.value = [];
+      else if (chipId === 'flowApprovalMode') appliedFlowApprovalModes.value = [];
+      else if (chipId === 'flowStatus') appliedFlowStatuses.value = [];
+    }
+
+    function toggleDraftFlowType(value: string) {
+      const cur = draftFlowTypes.value;
+      draftFlowTypes.value = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+    }
+
+    function toggleDraftFlowApprovalMode(value: string) {
+      const cur = draftFlowApprovalModes.value;
+      draftFlowApprovalModes.value = cur.includes(value)
+        ? cur.filter((v) => v !== value)
+        : [...cur, value];
+    }
+
+    function toggleDraftFlowStatus(value: string) {
+      const cur = draftFlowStatuses.value;
+      draftFlowStatuses.value = cur.includes(value)
+        ? cur.filter((v) => v !== value)
+        : [...cur, value];
+    }
+
+    const sourceData = computed(() =>
+      activeSubTab.value === 'others' ? othersRequestsData : requests.value,
+    );
+
+    const columns = computed(() =>
+      activeSubTab.value === 'others'
+        ? allColumns
+        : allColumns.filter((c) => c.field !== 'approvalProgressStatus'),
+    );
+
+    const currentPageData = computed(() => {
+      const filters = appliedFilters.value;
+      const data = sourceData.value;
+      if (!filters.length) return data;
+
+      // Group filters by key (OR within same key, AND between keys)
+      const filtersByKey = new Map<string, { operator: string; value: string }[]>();
+      for (const f of filters) {
+        const key = f.key;
+        if (!filtersByKey.has(key)) filtersByKey.set(key, []);
+        filtersByKey.get(key)!.push({ operator: f.operator, value: f.value });
+      }
+
+      return data.filter((r) => {
+        for (const [key, keyFilters] of filtersByKey) {
+          if (key === 'Status') {
+            const statusValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+            if (statusValues.length && !statusValues.includes(r.status)) return false;
+          } else if (key === 'Requester') {
+            const reqFilter = keyFilters[0];
+            if (reqFilter?.value) {
+              const search = reqFilter.value.toLowerCase();
+              if (!r.requester.toLowerCase().includes(search)) return false;
+            }
+          } else if (key === 'Approval Mode') {
+            const typeFilter = keyFilters[0];
+            if (typeFilter?.value && r.approvalType !== typeFilter.value) return false;
+          }
+        }
+        return true;
+      });
+    });
+    const totalRecords = computed(() => currentPageData.value.length);
 
     function handleSearch(_query: string) {
       // Placeholder for search
@@ -288,8 +1119,8 @@ const AccessRequestsListPage = defineComponent({
       }
     }
 
-    function handleFilterApply(filters: { key: string; operator: string; value: string }[]) {
-      appliedFilters.value = filters;
+    function handleFilterApply(filters: { key: string; operator: string; value: string; id?: string }[]) {
+      appliedFilters.value = filters.map((f, i) => ({ ...f, id: f.id ?? `filter-${i}` }));
       showFilterModal.value = false;
     }
 
@@ -298,17 +1129,113 @@ const AccessRequestsListPage = defineComponent({
       showFilterModal.value = false;
     }
 
-    function handleFilterRemove(filter: { id?: string | number; key: string }) {
-      appliedFilters.value = appliedFilters.value.filter(
-        (f) => (filter.id ? f.id !== filter.id : f.key !== filter.key),
-      );
+    function handleFilterRemove(filter: {
+      id?: string | number;
+      key: string;
+      operator?: string;
+      value?: string;
+    }) {
+      const hasId = filter.id != null && String(filter.id) !== '';
+      appliedFilters.value = appliedFilters.value.filter((f) => {
+        if (hasId) {
+          return f.id !== filter.id;
+        }
+        if (filter.value !== undefined) {
+          const op = filter.operator ?? 'is';
+          return !(f.key === filter.key && f.operator === op && f.value === filter.value);
+        }
+        return f.key !== filter.key;
+      });
     }
 
     function handleRowClick() {
       // Placeholder for row click navigation to detail
     }
 
+    function handleApprovalFlowSearch(_query: string) {
+      // Placeholder
+    }
+
+    function handleApprovalFlowFilter() {
+      openApprovalFlowFilterDialog();
+    }
+
+    function handleAddApprovalFlow() {
+      // Placeholder
+    }
+
+    function openSettings() {
+      showSettings.value = true;
+    }
+
+    function closeSettings() {
+      showSettings.value = false;
+    }
+
+    function removeSettingsWebhookChannel(id: string) {
+      settingsWebhookChannels.value = settingsWebhookChannels.value.filter((c) => c.id !== id);
+    }
+
+    function openRemoveWebhookChannelDialog(id: string) {
+      webhookChannelIdPendingRemoval.value = id;
+      showRemoveWebhookChannelDialog.value = true;
+    }
+
+    function closeRemoveWebhookChannelDialog() {
+      showRemoveWebhookChannelDialog.value = false;
+    }
+
+    function confirmRemoveWebhookChannel() {
+      const id = webhookChannelIdPendingRemoval.value;
+      if (id) removeSettingsWebhookChannel(id);
+      showRemoveWebhookChannelDialog.value = false;
+    }
+
+    watch(showRemoveWebhookChannelDialog, (open) => {
+      if (!open) webhookChannelIdPendingRemoval.value = null;
+    });
+
+    function openSelectChannelModal() {
+      showSelectChannelModal.value = true;
+    }
+
+    function closeSelectChannelModal() {
+      showSelectChannelModal.value = false;
+      selectChannelSearch.value = '';
+    }
+
+    function handleSelectChannelAdd() {
+      showSelectChannelModal.value = false;
+      selectChannelSearch.value = '';
+    }
+
+    /** Full-bleed table: avoid intrinsic table width + horizontal centering on wide viewports */
+    const listPageDataTablePt = {
+      root: {
+        class: 'min-w-0 w-full max-w-none self-stretch',
+        style: 'flex: 1 1 0; min-height: 0; height: 100%; width: 100%; min-width: 0;',
+      },
+      tableContainer: {
+        class: 'min-w-0 w-full max-w-none',
+        style: 'flex: 1 1 0; min-height: 0; height: 100%; width: 100%; min-width: 0;',
+      },
+      table: {
+        class: '!min-w-full w-full',
+        style: 'table-layout: fixed;',
+      },
+      rowExpansion: {
+        class: '!max-w-none w-full min-w-0',
+      },
+      rowExpansionCell: {
+        class: 'w-full min-w-0 max-w-none p-0 align-top',
+      },
+      virtualScroller: {
+        root: { class: 'min-h-0 min-w-0 w-full max-w-none flex-1' },
+      },
+    };
+
     return {
+      listPageDataTablePt,
       menuItems,
       profileMenuItems,
       columns,
@@ -321,6 +1248,19 @@ const AccessRequestsListPage = defineComponent({
       subTabOptions,
       activeMainTab,
       activeSubTab,
+      activeSessionsSubTab,
+      activeSessionsSubTabOptions,
+      timedAccessRows,
+      timedAccessColumns,
+      timedAccessSelection,
+      deviceAdminRows,
+      deviceAdminSessionColumns,
+      deviceAdminSelection,
+      activeSessionsActionsMenuRef,
+      activeSessionsActionsMenuItems,
+      toggleActiveSessionsActionsMenu,
+      handleActiveSessionsRefresh,
+      handleActiveSessionsSearch,
       exportOptions,
       handleSearch,
       handleFilter,
@@ -330,6 +1270,58 @@ const AccessRequestsListPage = defineComponent({
       handleRefresh,
       handleExportSelect,
       handleRowClick,
+      approvalFlowsData,
+      filteredApprovalFlows,
+      approvalFlowColumns,
+      approvalFlowsTotalRecords,
+      handleApprovalFlowSearch,
+      handleApprovalFlowFilter,
+      handleAddApprovalFlow,
+      showApprovalFlowFilterDialog,
+      activeApprovalFlowFilterChips,
+      approvalFlowFilterApplyDisabled,
+      draftFlowUserGroupSearch,
+      draftFlowTypes,
+      draftFlowApprovalModes,
+      draftFlowStatuses,
+      approvalFlowFilterFlowTypes,
+      approvalFlowFilterApprovalModes,
+      approvalFlowFilterStatuses,
+      applyApprovalFlowFilters,
+      cancelApprovalFlowFilterDialog,
+      clearDraftApprovalFlowFilters,
+      clearAllApprovalFlowFilters,
+      removeApprovalFlowFilterChip,
+      toggleDraftFlowType,
+      toggleDraftFlowApprovalMode,
+      toggleDraftFlowStatus,
+      showSettings,
+      openSettings,
+      closeSettings,
+      accessRequestsOn,
+      notifyViaEmail,
+      notifyRequestReceived,
+      notifyApprovalDenial,
+      exposeApprovalProgress,
+      settingsWebhookChannels,
+      webhookAccessEvents: WEBHOOK_ACCESS_EVENT_DEFINITIONS,
+      webhookChannelEventsTagLabel,
+      isWebhookChannelSelectAllChecked,
+      isWebhookChannelSelectAllIndeterminate,
+      setAllWebhookChannelEvents,
+      openRemoveWebhookChannelDialog,
+      closeRemoveWebhookChannelDialog,
+      confirmRemoveWebhookChannel,
+      showRemoveWebhookChannelDialog,
+      showDisableApprovalFlowDialog,
+      closeDisableApprovalFlowDialog,
+      confirmDisableApprovalFlow,
+      showSelectChannelModal,
+      selectChannelSearch,
+      selectChannelSelectedCount,
+      openSelectChannelModal,
+      closeSelectChannelModal,
+      handleSelectChannelAdd,
     };
   },
   template: `
@@ -341,9 +1333,13 @@ const AccessRequestsListPage = defineComponent({
         :collapsible="true"
         :topNavToggle="true"
       />
-      <div class="flex-1 flex flex-col min-w-0 overflow-auto">
+      <div class="main flex h-full min-h-0 min-w-0 w-full flex-[1_1_0] flex-col self-stretch overflow-hidden">
+      
         <TopBar />
+        <div class="flex min-h-0 h-full w-full min-w-0 flex-[1_1_0] flex-col">
         <PageHeader
+          v-if="!showSettings"
+          class="shrink-0"
           title="Access Requests"
           :tabs="mainTabs"
           :activeTab="activeMainTab"
@@ -353,17 +1349,23 @@ const AccessRequestsListPage = defineComponent({
             <ClipboardDocumentCheckIcon class="size-7" />
           </template>
           <template #actions>
-            <Button label="Settings" severity="secondary" variant="outlined">
+            <Button label="Settings" severity="secondary" variant="outlined" @click="openSettings">
               <template #icon>
                 <Cog6ToothIcon class="size-5" />
               </template>
             </Button>
           </template>
         </PageHeader>
+        <PageHeader v-else class="shrink-0" title="Access Requests">
+          <template #icon>
+            <ClipboardDocumentCheckIcon class="size-7" />
+          </template>
+        </PageHeader>
 
-        <div v-if="activeMainTab === 'request-queue'" class="flex flex-col h-full relative flex-1 min-h-0 px-6 pb-6">
+        <template v-if="!showSettings">
+        <div v-if="activeMainTab === 'request-queue'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch px-6 pb-6">
           <!-- Sub-tabs: Administrator / Others (matches Device Detail pattern) -->
-          <div class="flex items-center justify-between mb-4 pt-6">
+          <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
             <SelectButton
               v-model="activeSubTab"
               :options="subTabOptions"
@@ -373,14 +1375,15 @@ const AccessRequestsListPage = defineComponent({
           </div>
 
           <!-- DataTableToolbar (outside DataTable - Circuit DataTable does not support #toolbar slot) -->
-          <div class="shrink-0 pb-4">
+          <div class="shrink-0 w-full min-w-0 pb-4">
             <DataTableToolbar
-              search-placeholder="Search access requests..."
+              search-placeholder="Search"
               :show-add-button="false"
               :show-filter-button="true"
               :show-refresh-button="true"
               :show-columns-button="true"
               :show-download-button="true"
+              :show-save-view-button="false"
               :active-filters="appliedFilters"
               :export-options="exportOptions"
               @filter-remove="handleFilterRemove"
@@ -389,58 +1392,63 @@ const AccessRequestsListPage = defineComponent({
               @filter="handleFilter"
               @refresh="handleRefresh"
               @export-select="handleExportSelect"
-            />
+            >
+              <template #saved-views>
+                <span class="text-body-sm text-neutral-subtle">Last refreshed an hour ago</span>
+              </template>
+            </DataTableToolbar>
           </div>
 
-          <CircuitDataTable
-            class="w-fit"
-            :data="currentPageData"
-            :columns="columns"
-            :paginator="true"
-            :rows="50"
-            :total-records="totalRecords"
-            :rows-per-page-options="[
-              { label: '10 Items per page', value: 10 },
-              { label: '20 Items per page', value: 20 },
-              { label: '50 Items per page', value: 50 },
-            ]"
-            :show-rows-per-page-options="true"
-            :show-page-report="true"
-            :card="true"
-            size="default"
-            :expander="true"
-            scrollable
-            scroll-height="flex"
-            data-key="id"
-            @row-click="handleRowClick"
-            :pt="{
-              root: { style: 'flex: 1 1 0; min-height: 0; height: 100%;' },
-              tableContainer: { style: 'flex: 1 1 0; min-height: 0; height: 100%;' },
-            }"
-            :ptOptions="{ mergeSections: true, mergeProps: true }"
-          >
+          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+            <CircuitDataTable
+              class="min-h-0 min-w-0 w-full flex-1"
+              :data="currentPageData"
+              :columns="columns"
+              :paginator="true"
+              :rows="50"
+              :total-records="totalRecords"
+              :rows-per-page-options="[
+                { label: '10 Items per page', value: 10 },
+                { label: '20 Items per page', value: 20 },
+                { label: '50 Items per page', value: 50 },
+              ]"
+              :show-rows-per-page-options="true"
+              :show-page-report="true"
+              :card="true"
+              size="default"
+              :expander="true"
+              scrollable
+              scroll-height="flex"
+              data-key="id"
+              @row-click="handleRowClick"
+              :pt="listPageDataTablePt"
+              :ptOptions="{ mergeSections: true, mergeProps: true }"
+            >
             <template #expansion="{ data }">
               <div class="flex flex-col gap-4 p-4 bg-neutral-surface">
-                <!-- Missing Data: Approval Flow Description Box -->
+                <!-- Error: Approval flow changed during execution -->
                 <div
-                  v-if="data.status === 'Missing Data' && data.approvalFlowDescription"
-                  class="flex items-start gap-3 rounded-lg border border-info-base/30 bg-feedback-info-surface p-4 max-w-[800px]"
+                  v-if="data.status === 'Error'"
+                  class="flex items-start gap-3 rounded-lg border border-error-base/30 bg-feedback-error-surface p-4 max-w-[800px]"
                 >
-                  <div class="size-8 shrink-0 rounded flex items-center justify-center bg-info-base/20 border border-info-base/30">
-                    <span class="text-body-sm font-bold text-info-base">{{ data.name?.charAt(0) || 'B' }}</span>
-                  </div>
-                  <div class="flex flex-col gap-1 min-w-0">
-                    <span class="text-body-md text-neutral-base line-clamp-2">{{ data.approvalFlowDescription }}</span>
-                    <LinkText label="Show More" href="#" class="text-body-md shrink-0" />
-                  </div>
+                  <ExclamationTriangleIcon class="size-6 shrink-0 text-error-base" aria-hidden="true" />
+                  <p class="text-body-md text-neutral-base">
+                    Changes to the approval flow were made during the execution of the approval process. This request is no longer valid and must be re-requested by the end user.
+                  </p>
                 </div>
 
-                <!-- Header: App icon + Title (skip for Missing Data when we have approval flow box) -->
-                <div v-if="data.status !== 'Missing Data' || !data.approvalFlowDescription" class="flex items-center gap-3">
+                <!-- Approval flow visual (hidden for Error — replaced by error message above) -->
+                <template v-if="data.status !== 'Error'">
+                <!-- Header: App icon + Title or Approval Flow Description -->
+                <div class="flex items-center gap-3">
                   <div class="size-8 shrink-0 rounded flex items-center justify-center bg-info-surface border border-info-base/20">
                     <span class="text-body-sm font-bold text-info-base">{{ data.name?.charAt(0) || '?' }}</span>
                   </div>
-                  <span class="text-heading-4 text-neutral-base">{{ data.approvalTitle }}</span>
+                  <div class="flex flex-col gap-1 min-w-0">
+                    <span v-if="data.approvalFlowDescription" class="text-heading-4 text-neutral-base line-clamp-2">{{ data.approvalFlowDescription }}</span>
+                    <span v-else class="text-heading-4 text-neutral-base">{{ data.approvalTitle }}</span>
+                    <LinkText v-if="data.approvalFlowDescription" label="Show More" href="#" class="text-body-md shrink-0" />
+                  </div>
                 </div>
 
                 <!-- Request Details (2-column grid) -->
@@ -455,7 +1463,10 @@ const AccessRequestsListPage = defineComponent({
                     >{{ data.manager || 'Not Provided' }}</span>
                     <LinkText v-else :label="data.manager" href="#" class="text-body-md" />
                   </DetailsKeyValue>
-                  <DetailsKeyValue v-if="data.status !== 'Missing Data'" label="Duration" :value="data.duration" />
+                  <DetailsKeyValue
+                    label="Duration"
+                    :value="(data.manager === 'Not Provided' || !data.manager || data.status === 'Missing Data') ? 'N/A' : data.duration"
+                  />
                   <DetailsKeyValue label="Reason for Request" :value="data.reasonForRequest" />
                 </div>
 
@@ -469,12 +1480,15 @@ const AccessRequestsListPage = defineComponent({
                       class="flex items-start gap-3"
                     >
                       <div
-                        class="flex shrink-0 items-center justify-center rounded-full border-2 size-6"
-                        :class="step.type === 'actionRequired'
-                          ? 'border-error-base bg-error-base'
-                          : step.type === 'approved'
-                            ? 'border-success-base bg-success-base'
-                            : 'border-warning-base bg-transparent'"
+                        class="flex shrink-0 items-center justify-center rounded-full border-2"
+                        :class="[
+                          step.type === 'pending' ? 'h-[22px] w-[22px]' : 'size-6',
+                          step.type === 'actionRequired'
+                            ? 'border-error-base bg-error-base'
+                            : step.type === 'approved'
+                              ? 'border-success-base bg-success-base'
+                              : 'border-warning-base bg-transparent',
+                        ]"
                       >
                         <ExclamationTriangleIcon
                           v-if="step.type === 'actionRequired'"
@@ -483,7 +1497,7 @@ const AccessRequestsListPage = defineComponent({
                         />
                         <EllipsisHorizontalIcon
                           v-else-if="step.type === 'pending'"
-                          class="size-4 text-warning-base"
+                          class="h-[16px] w-[16px] shrink-0 text-warning-base"
                           aria-hidden="true"
                         />
                         <CheckCircleIcon
@@ -508,18 +1522,42 @@ const AccessRequestsListPage = defineComponent({
                   <div v-else class="flex items-start gap-3">
                     <div
                       class="flex shrink-0 items-center justify-center rounded-full border-2"
-                      :class="data.approvalProgressStatus === 'Approved'
-                        ? 'size-6 border-success-base bg-success-base'
-                        : 'size-6 border-warning-base bg-transparent'"
+                      :class="[
+                        data.approvalProgressStatus !== 'Approved' &&
+                        data.status !== 'Approved' &&
+                        data.approvalProgressStatus !== 'Denied' &&
+                        data.status !== 'Denied' &&
+                        data.approvalProgressStatus !== 'Expired' &&
+                        data.status !== 'Expired'
+                          ? 'h-[22px] w-[22px]'
+                          : 'size-6',
+                        data.approvalProgressStatus === 'Approved' || data.status === 'Approved'
+                          ? 'border-success-base bg-success-base'
+                          : data.approvalProgressStatus === 'Denied' || data.status === 'Denied'
+                            ? 'border-error-base bg-error-base'
+                            : data.approvalProgressStatus === 'Expired' || data.status === 'Expired'
+                              ? 'border-neutral-default_solid bg-transparent'
+                              : 'border-warning-base bg-transparent',
+                      ]"
                     >
                       <CheckCircleIcon
-                        v-if="data.approvalProgressStatus === 'Approved'"
+                        v-if="data.approvalProgressStatus === 'Approved' || data.status === 'Approved'"
                         class="size-4 text-neutral-ghost"
+                        aria-hidden="true"
+                      />
+                      <XCircleIcon
+                        v-else-if="data.approvalProgressStatus === 'Denied' || data.status === 'Denied'"
+                        class="size-4 text-neutral-ghost"
+                        aria-hidden="true"
+                      />
+                      <XCircleIcon
+                        v-else-if="data.approvalProgressStatus === 'Expired' || data.status === 'Expired'"
+                        class="size-4 text-neutral-subtle"
                         aria-hidden="true"
                       />
                       <EllipsisHorizontalIcon
                         v-else
-                        class="size-4 text-warning-base"
+                        class="h-[16px] w-[16px] shrink-0 text-warning-base"
                         aria-hidden="true"
                       />
                     </div>
@@ -535,6 +1573,7 @@ const AccessRequestsListPage = defineComponent({
                   <Button label="Deny Access" severity="danger" variant="outlined" />
                   <Button label="Grant Access" />
                 </div>
+                </template>
               </div>
             </template>
 
@@ -551,7 +1590,8 @@ const AccessRequestsListPage = defineComponent({
                 <span class="text-body-sm mt-1">Create your first request to get started</span>
               </div>
             </template>
-          </CircuitDataTable>
+            </CircuitDataTable>
+          </div>
 
           <FilterModal
             v-model:visible="showFilterModal"
@@ -562,13 +1602,702 @@ const AccessRequestsListPage = defineComponent({
           />
         </div>
 
-        <div v-if="activeMainTab === 'approval-flows'" class="flex-1 flex flex-col min-h-0 px-6 py-6">
-          <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
-            <span class="text-body-md">Approval Flows</span>
-            <span class="text-body-sm mt-1">Configure approval workflows for access requests</span>
+        <div v-if="activeMainTab === 'active-sessions'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch px-6 pb-6">
+          <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
+            <SelectButton
+              v-model="activeSessionsSubTab"
+              :options="activeSessionsSubTabOptions"
+              optionLabel="label"
+              optionValue="value"
+            />
+          </div>
+
+          <template v-if="activeSessionsSubTab === 'timed-access'">
+            <div class="flex shrink-0 w-full min-w-0 items-start gap-sm pb-4">
+              <div class="min-w-0 flex-1">
+                <DataTableToolbar
+                  search-placeholder="Search"
+                  :show-add-button="false"
+                  :show-filter-button="false"
+                  :show-columns-button="false"
+                  :show-download-button="false"
+                  :show-save-view-button="false"
+                  :show-refresh-button="true"
+                  :active-filters="[]"
+                  @search="handleActiveSessionsSearch"
+                  @refresh="handleActiveSessionsRefresh"
+                >
+                  <template #saved-views>
+                    <span class="text-body-sm text-neutral-subtle">Last refreshed a minute ago</span>
+                  </template>
+                </DataTableToolbar>
+              </div>
+              <div class="flex shrink-0 items-start pt-0.5">
+                <Button
+                  label="Actions"
+                  severity="secondary"
+                  variant="outlined"
+                  aria-haspopup="true"
+                  aria-label="Open actions menu"
+                  @click="toggleActiveSessionsActionsMenu"
+                />
+              </div>
+            </div>
+
+            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+              <CircuitDataTable
+                class="min-h-0 min-w-0 w-full flex-1"
+                :data="timedAccessRows"
+                :columns="timedAccessColumns"
+                selection-mode="multiple"
+                v-model:selection="timedAccessSelection"
+                :paginator="true"
+                :rows="20"
+                :total-records="timedAccessRows.length"
+                :rows-per-page-options="[
+                  { label: '10 Items per page', value: 10 },
+                  { label: '20 Items per page', value: 20 },
+                  { label: '50 Items per page', value: 50 },
+                ]"
+                :show-rows-per-page-options="true"
+                :show-page-report="true"
+                :card="true"
+                size="default"
+                scrollable
+                scroll-height="flex"
+                data-key="id"
+                :pt="listPageDataTablePt"
+                :ptOptions="{ mergeSections: true, mergeProps: true }"
+              >
+                <template #empty>
+                  <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
+                    <span class="text-body-md">No timed access sessions match your search</span>
+                    <span class="text-body-sm mt-1">Try adjusting your search</span>
+                  </div>
+                </template>
+                <template #initialEmpty>
+                  <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
+                    <span class="text-body-md">No timed access sessions</span>
+                    <span class="text-body-sm mt-1">Active timed grants will appear here</span>
+                  </div>
+                </template>
+              </CircuitDataTable>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="flex shrink-0 w-full min-w-0 items-start gap-sm pb-4">
+              <div class="min-w-0 flex-1">
+                <DataTableToolbar
+                  search-placeholder="Search"
+                  :show-add-button="false"
+                  :show-filter-button="false"
+                  :show-columns-button="false"
+                  :show-download-button="false"
+                  :show-save-view-button="false"
+                  :show-refresh-button="true"
+                  :active-filters="[]"
+                  @search="handleActiveSessionsSearch"
+                  @refresh="handleActiveSessionsRefresh"
+                >
+                  <template #saved-views>
+                    <span class="text-body-sm text-neutral-subtle">Last refreshed a minute ago</span>
+                  </template>
+                </DataTableToolbar>
+              </div>
+              <div class="flex shrink-0 items-start pt-0.5">
+                <Button
+                  label="Actions"
+                  severity="secondary"
+                  variant="outlined"
+                  aria-haspopup="true"
+                  aria-label="Open actions menu"
+                  @click="toggleActiveSessionsActionsMenu"
+                />
+              </div>
+            </div>
+
+            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+              <CircuitDataTable
+                class="min-h-0 min-w-0 w-full flex-1"
+                :data="deviceAdminRows"
+                :columns="deviceAdminSessionColumns"
+                selection-mode="multiple"
+                v-model:selection="deviceAdminSelection"
+                :paginator="true"
+                :rows="20"
+                :total-records="deviceAdminRows.length"
+                :rows-per-page-options="[
+                  { label: '10 Items per page', value: 10 },
+                  { label: '20 Items per page', value: 20 },
+                  { label: '50 Items per page', value: 50 },
+                ]"
+                :show-rows-per-page-options="true"
+                :show-page-report="true"
+                :card="true"
+                size="default"
+                scrollable
+                scroll-height="flex"
+                data-key="id"
+                :pt="listPageDataTablePt"
+                :ptOptions="{ mergeSections: true, mergeProps: true }"
+              >
+                <template #empty>
+                  <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
+                    <span class="text-body-md">No device admin sessions match your search</span>
+                  </div>
+                </template>
+                <template #initialEmpty>
+                  <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
+                    <span class="text-body-md">No device admin sessions</span>
+                  </div>
+                </template>
+              </CircuitDataTable>
+            </div>
+          </template>
+
+          <Menu ref="activeSessionsActionsMenuRef" :model="activeSessionsActionsMenuItems" :popup="true" />
+        </div>
+
+        <div v-if="activeMainTab === 'approval-flows'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch px-6 pb-6">
+          <div class="shrink-0 w-full min-w-0 pt-6 pb-4">
+            <DataTableToolbar
+              add-button-label="Add Approval Flow"
+              search-placeholder="Search"
+              :show-add-button="true"
+              :show-filter-button="true"
+              :show-refresh-button="false"
+              :show-columns-button="false"
+              :show-download-button="false"
+              :show-save-view-button="false"
+              :active-filters="activeApprovalFlowFilterChips"
+              :max-visible-filters="5"
+              @search="handleApprovalFlowSearch"
+              @filter="handleApprovalFlowFilter"
+              @filter-remove="removeApprovalFlowFilterChip"
+              @clear-all="clearAllApprovalFlowFilters"
+              @add="handleAddApprovalFlow"
+            />
+          </div>
+
+          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+            <CircuitDataTable
+              class="min-h-0 min-w-0 w-full flex-1"
+              :data="filteredApprovalFlows"
+              :columns="approvalFlowColumns"
+              :paginator="true"
+              :rows="20"
+              :total-records="approvalFlowsTotalRecords"
+              :rows-per-page-options="[
+                { label: '10 Items per page', value: 10 },
+                { label: '20 Items per page', value: 20 },
+                { label: '50 Items per page', value: 50 },
+              ]"
+              :show-rows-per-page-options="true"
+              :show-page-report="true"
+              :card="true"
+              size="default"
+              :expander="true"
+              scrollable
+              scroll-height="flex"
+              data-key="id"
+              :pt="listPageDataTablePt"
+              :ptOptions="{ mergeSections: true, mergeProps: true }"
+            >
+            <template #expansion="{ data }">
+              <div
+                class="box-border flex w-full min-w-0 max-w-none flex-col gap-4 border-t border-neutral-default_solid bg-neutral-surface p-md text-start"
+              >
+                <p v-if="data.expansionDescription" class="text-body-md text-neutral-base">
+                  {{ data.expansionDescription }}
+                </p>
+                <p v-else class="text-body-md text-neutral-subtle">
+                  Approval flow configuration for <span class="text-body-md-semi-bold text-neutral-base">{{ data.name }}</span>
+                </p>
+                <div v-if="data.configurationSteps?.length" class="flex flex-col gap-3">
+                  <span class="text-body-md-semi-bold text-neutral-base">Approval Configuration</span>
+                  <div class="flex flex-col">
+                    <template v-for="(step, idx) in data.configurationSteps" :key="idx">
+                      <div class="flex gap-sm">
+                        <div class="flex shrink-0 flex-col items-center">
+                          <div
+                            class="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-2 border-warning-base bg-transparent"
+                          >
+                            <EllipsisHorizontalIcon
+                              class="h-[16px] w-[16px] shrink-0 text-warning-base"
+                              aria-hidden="true"
+                            />
+                          </div>
+                          <div
+                            v-if="idx < data.configurationSteps.length - 1"
+                            class="w-px min-h-10 shrink-0 grow-0 bg-neutral-default_solid"
+                            aria-hidden="true"
+                          />
+                        </div>
+                        <div
+                          class="flex min-w-0 flex-col gap-0.5"
+                          :class="idx < data.configurationSteps.length - 1 ? 'pb-6' : ''"
+                        >
+                          <span class="text-body-md-semi-bold text-neutral-base">{{ step.name }}</span>
+                          <span class="text-body-sm text-neutral-subtle">{{ step.roleLabel }}</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-sm pt-1">
+                  <Button label="Delete" severity="danger" variant="outlined" />
+                  <Button label="Edit" severity="secondary" variant="outlined" />
+                </div>
+              </div>
+            </template>
+
+            <template #empty>
+              <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
+                <span class="text-body-md">No approval flows match your search</span>
+                <span class="text-body-sm mt-1">Try adjusting your search or filters</span>
+              </div>
+            </template>
+
+            <template #initialEmpty>
+              <div class="flex flex-col items-center justify-center py-16 text-neutral-subtle">
+                <span class="text-body-md">No approval flows yet</span>
+                <span class="text-body-sm mt-1">Add an approval flow to get started</span>
+              </div>
+            </template>
+            </CircuitDataTable>
           </div>
         </div>
+
+        </template>
+
+        <template v-else>
+          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-neutral-surface">
+            <div class="flex w-full min-w-0 flex-col gap-6 px-6 py-6">
+              <div
+                class="flex max-w-[1024px] flex-col gap-6 rounded-lg border border-neutral-default_solid bg-neutral-base p-md"
+              >
+                <div class="flex flex-col gap-2">
+                  <h2 class="text-heading-3 text-neutral-base">Access Request Settings</h2>
+                  <p class="text-body-md text-neutral-base">
+                    Configure Resource Access settings for your organization.
+                    <span class="inline-flex items-center gap-0.5 align-middle">
+                      <LinkText label="Learn More" href="#" class="text-body-md" />
+                      <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-info-base" aria-hidden="true" />
+                    </span>
+                  </p>
+                </div>
+
+                <Divider />
+
+                <div class="flex items-start gap-md">
+                  <ToggleSwitch v-model="accessRequestsOn" aria-label="Access requests enabled" />
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-body-md-semi-bold text-neutral-base">Access Requests On</span>
+                    <p class="text-body-sm text-neutral-subtle">
+                      Enabling this feature will allow end users to request access to resources from their user portal.
+                    </p>
+                  </div>
+                </div>
+
+                <Divider />
+
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-heading-4 text-neutral-base">Notifications</h3>
+                  <div class="flex flex-col gap-3">
+                    <span class="text-body-md text-neutral-base">Receive Access Request Notifications via:</span>
+                    <CheckboxWithLabel v-model="notifyViaEmail" :binary="true">
+                      <template #label>Email</template>
+                    </CheckboxWithLabel>
+                  </div>
+                  <div class="flex flex-col gap-3">
+                    <span class="text-body-md text-neutral-base">
+                      Send end user notification emails for the following events:
+                    </span>
+                    <CheckboxWithLabel v-model="notifyRequestReceived" :binary="true">
+                      <template #label>Request Received Confirmation</template>
+                    </CheckboxWithLabel>
+                    <CheckboxWithLabel v-model="notifyApprovalDenial" :binary="true">
+                      <template #label>Request Approval/Denial</template>
+                    </CheckboxWithLabel>
+                  </div>
+                </div>
+
+                <Divider />
+
+                <div class="flex flex-col gap-3">
+                  <h3 class="text-heading-4 text-neutral-base">Approver Progress Indicator</h3>
+                  <CheckboxWithLabel v-model="exposeApprovalProgress" :binary="true">
+                    <template #label>
+                      <span class="inline-flex items-center gap-sm">
+                        <span>Expose the Approval Progress to end users</span>
+                        <InformationCircleIcon
+                          v-tooltip.top="'When enabled, end users can see approval status in their portal.'"
+                          class="size-4 shrink-0 text-neutral-subtle"
+                          aria-hidden="true"
+                        />
+                      </span>
+                    </template>
+                  </CheckboxWithLabel>
+                </div>
+
+                <Divider />
+
+                <div class="flex flex-col gap-4">
+                  <h3 class="text-heading-4 text-neutral-base">Webhook Notifications</h3>
+                  <p class="text-body-md text-neutral-base">
+                    Receive Access Request event notifications using your already configured webhook channels.
+                    <span class="inline-flex items-center gap-0.5 align-middle">
+                      <LinkText label="Learn More" href="#" class="text-body-md" />
+                      <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-info-base" aria-hidden="true" />
+                    </span>
+                  </p>
+                  <Button
+                    label="Select Channel"
+                    severity="secondary"
+                    variant="outlined"
+                    class="w-fit shrink-0 self-start"
+                    @click="openSelectChannelModal"
+                  />
+
+                  <div class="flex flex-col gap-sm">
+                    <span class="text-body-md-semi-bold text-neutral-base">Webhook Channel</span>
+                    <div
+                      v-for="ch in settingsWebhookChannels"
+                      :key="ch.id"
+                      class="flex flex-col overflow-hidden rounded-lg border border-neutral-default_solid"
+                    >
+                      <div class="flex min-w-0 items-center gap-sm bg-neutral-surface px-md py-sm">
+                        <button
+                          type="button"
+                          class="flex shrink-0 rounded p-1 text-neutral-subtle transition-colors hover:bg-neutral-surface_raised hover:text-neutral-base"
+                          :aria-expanded="ch.expanded"
+                          :aria-label="ch.expanded ? 'Collapse ' + ch.name : 'Expand ' + ch.name"
+                          @click="ch.expanded = !ch.expanded"
+                        >
+                          <ChevronUpIcon v-if="ch.expanded" class="size-4" aria-hidden="true" />
+                          <ChevronDownIcon v-else class="size-4" aria-hidden="true" />
+                        </button>
+                        <span class="min-w-0 flex-1 truncate text-body-md text-neutral-base">{{ ch.name }}</span>
+                        <Tag
+                          :value="webhookChannelEventsTagLabel(ch.eventSelection)"
+                          severity="secondary"
+                          class="shrink-0"
+                        />
+                        <Button
+                          severity="secondary"
+                          variant="text"
+                          size="small"
+                          :aria-label="'Remove ' + ch.name"
+                          @click="openRemoveWebhookChannelDialog(ch.id)"
+                        >
+                          <template #icon>
+                            <TrashIcon class="size-4" />
+                          </template>
+                        </Button>
+                      </div>
+                      <div
+                        v-if="ch.expanded"
+                        class="flex flex-col gap-md border-t border-neutral-default_solid px-md py-md"
+                      >
+                        <div class="flex items-start gap-sm">
+                          <Checkbox
+                            :binary="true"
+                            :inputId="'webhook-select-all-' + ch.id"
+                            :modelValue="isWebhookChannelSelectAllChecked(ch)"
+                            :indeterminate="isWebhookChannelSelectAllIndeterminate(ch)"
+                            @update:modelValue="setAllWebhookChannelEvents(ch, $event)"
+                          />
+                          <label
+                            class="cursor-pointer text-body-md text-neutral-base pt-0.5"
+                            :for="'webhook-select-all-' + ch.id"
+                          >
+                            Select All
+                          </label>
+                        </div>
+                        <div class="flex flex-col gap-md border-l border-neutral-default_solid pl-md ml-sm">
+                          <CheckboxWithLabel
+                            v-for="ev in webhookAccessEvents"
+                            :key="ev.id"
+                            v-model="ch.eventSelection[ev.id]"
+                            :binary="true"
+                            :inputId="'webhook-ev-' + ch.id + '-' + ev.id"
+                          >
+                            <template #label>
+                              <span class="text-body-md-semi-bold text-neutral-base">{{ ev.key }}</span>
+                            </template>
+                            <template #description>
+                              <span class="text-body-sm text-neutral-subtle">{{ ev.description }}</span>
+                            </template>
+                          </CheckboxWithLabel>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            class="flex shrink-0 items-center justify-end gap-sm border-t border-neutral-default_solid bg-neutral-base px-6 py-3"
+          >
+            <Button label="Cancel" severity="secondary" variant="outlined" @click="closeSettings" />
+            <Button label="Save" severity="secondary" disabled />
+          </div>
+          </div>
+        </template>
+
+        </div>
       </div>
+
+      <Dialog
+        v-model:visible="showApprovalFlowFilterDialog"
+        :draggable="false"
+        modal
+        header="Filter"
+        :style="{ width: '560px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <div class="flex flex-col gap-md">
+          <FormField label="User Group Assignment">
+            <template #default="{ inputId }">
+              <IconField>
+                <InputIcon>
+                  <MagnifyingGlassIcon />
+                </InputIcon>
+                <InputText
+                  :id="inputId"
+                  v-model="draftFlowUserGroupSearch"
+                  placeholder="Search"
+                  class="w-full"
+                />
+              </IconField>
+            </template>
+          </FormField>
+          <FormField label="Flow Type">
+            <template #default>
+              <div class="flex flex-wrap gap-sm">
+                <button
+                  v-for="opt in approvalFlowFilterFlowTypes"
+                  :key="opt"
+                  type="button"
+                  class="inline-flex items-center gap-sm rounded-full border px-md py-sm text-body-md transition-colors"
+                  :class="
+                    draftFlowTypes.includes(opt)
+                      ? 'border-info-base bg-info-surface text-info-base'
+                      : 'border-neutral-default_solid text-neutral-base'
+                  "
+                  :aria-pressed="draftFlowTypes.includes(opt)"
+                  @click="toggleDraftFlowType(opt)"
+                >
+                  <CheckCircleIcon
+                    v-if="draftFlowTypes.includes(opt)"
+                    class="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span
+                    v-else
+                    class="box-border size-4 shrink-0 rounded-full border-2 border-neutral-default_solid"
+                    aria-hidden="true"
+                  />
+                  <span>{{ opt }}</span>
+                </button>
+              </div>
+            </template>
+          </FormField>
+          <FormField label="Approval Mode">
+            <template #default>
+              <div class="flex flex-wrap gap-sm">
+                <button
+                  v-for="opt in approvalFlowFilterApprovalModes"
+                  :key="opt"
+                  type="button"
+                  class="inline-flex items-center gap-sm rounded-full border px-md py-sm text-body-md transition-colors"
+                  :class="
+                    draftFlowApprovalModes.includes(opt)
+                      ? 'border-info-base bg-info-surface text-info-base'
+                      : 'border-neutral-default_solid text-neutral-base'
+                  "
+                  :aria-pressed="draftFlowApprovalModes.includes(opt)"
+                  @click="toggleDraftFlowApprovalMode(opt)"
+                >
+                  <CheckCircleIcon
+                    v-if="draftFlowApprovalModes.includes(opt)"
+                    class="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span
+                    v-else
+                    class="box-border size-4 shrink-0 rounded-full border-2 border-neutral-default_solid"
+                    aria-hidden="true"
+                  />
+                  <span>{{ opt }}</span>
+                </button>
+              </div>
+            </template>
+          </FormField>
+          <FormField label="Status">
+            <template #default>
+              <div class="flex flex-wrap gap-sm">
+                <button
+                  v-for="opt in approvalFlowFilterStatuses"
+                  :key="opt"
+                  type="button"
+                  class="inline-flex items-center gap-sm rounded-full border px-md py-sm text-body-md transition-colors"
+                  :class="
+                    draftFlowStatuses.includes(opt)
+                      ? 'border-info-base bg-info-surface text-info-base'
+                      : 'border-neutral-default_solid text-neutral-base'
+                  "
+                  :aria-pressed="draftFlowStatuses.includes(opt)"
+                  @click="toggleDraftFlowStatus(opt)"
+                >
+                  <CheckCircleIcon
+                    v-if="draftFlowStatuses.includes(opt)"
+                    class="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span
+                    v-else
+                    class="box-border size-4 shrink-0 rounded-full border-2 border-neutral-default_solid"
+                    aria-hidden="true"
+                  />
+                  <span>{{ opt }}</span>
+                </button>
+              </div>
+            </template>
+          </FormField>
+        </div>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0">
+            <Button
+              label="Clear all"
+              severity="secondary"
+              variant="text"
+              @click="clearDraftApprovalFlowFilters"
+            />
+          </div>
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="text"
+              @click="cancelApprovalFlowFilterDialog"
+            />
+            <Button
+              label="Apply"
+              :disabled="approvalFlowFilterApplyDisabled"
+              @click="applyApprovalFlowFilters"
+            />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showSelectChannelModal"
+        :draggable="false"
+        modal
+        header="Select Channel"
+        :style="{ width: '560px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <div class="flex flex-col gap-md">
+          <span class="text-body-md text-neutral-base">
+            Select Webhook Channels ({{ selectChannelSelectedCount }})
+          </span>
+          <FormField label="Search channels">
+            <template #default="{ inputId }">
+              <IconField>
+                <InputIcon>
+                  <MagnifyingGlassIcon />
+                </InputIcon>
+                <InputText
+                  :id="inputId"
+                  v-model="selectChannelSearch"
+                  placeholder="Search channels..."
+                  class="w-full"
+                />
+              </IconField>
+            </template>
+          </FormField>
+          <div
+            class="flex min-h-60 flex-col rounded-md border border-neutral-default_solid bg-neutral-base"
+          />
+        </div>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeSelectChannelModal"
+            />
+            <Button
+              label="Add"
+              :disabled="selectChannelSelectedCount === 0"
+              @click="handleSelectChannelAdd"
+            />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showRemoveWebhookChannelDialog"
+        :draggable="false"
+        modal
+        header="Remove Webhook Channel"
+        :style="{ width: '480px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <p class="text-body-md text-neutral-subtle">
+          Removing this webhook channel from Access Requests will end notifications for all selected events.
+        </p>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeRemoveWebhookChannelDialog"
+            />
+            <Button label="Remove" severity="danger" variant="outlined" @click="confirmRemoveWebhookChannel" />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showDisableApprovalFlowDialog"
+        :draggable="false"
+        modal
+        header="Disable Approval Flow"
+        :style="{ width: '480px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <MessageNotification
+          severity="warn"
+          detail="If this approval flow is disabled, any pending requests will be canceled."
+        />
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeDisableApprovalFlowDialog"
+            />
+            <Button
+              label="Disable Flow"
+              severity="danger"
+              variant="outlined"
+              @click="confirmDisableApprovalFlow"
+            />
+          </div>
+        </template>
+      </Dialog>
     </div>
   `,
 });
@@ -587,3 +2316,22 @@ export default meta;
 type Story = StoryObj<typeof AccessRequestsListPage>;
 
 export const Default: Story = {};
+
+export const OthersTab: Story = {
+  args: {
+    initialSubTab: 'others',
+  },
+};
+
+export const ApprovalFlowsTab: Story = {
+  args: {
+    initialMainTab: 'approval-flows',
+  },
+};
+
+export const ActiveSessionsTimedAccess: Story = {
+  args: {
+    initialMainTab: 'active-sessions',
+    initialActiveSessionsSubTab: 'timed-access',
+  },
+};
