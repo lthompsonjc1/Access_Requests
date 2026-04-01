@@ -6,17 +6,22 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:demos": "bash scripts/build-demos.sh",
+    "dev:demos": "vite --config vite.config.demos.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "deploy-storybook": "pnpm run build-storybook && pnpm exec gh-pages -d storybook-static --cname circuit-playground.jumpcloud.io",
-    "run-s": "pnpm run storybook & pnpm run build-storybook"
+    "dev:all": "pnpm run storybook & pnpm run dev:demos",
+    "run-s": "pnpm run storybook & pnpm run build-storybook",
+    "postinstall": "mkdir -p public/fonts && cp node_modules/@jumpcloud/circuit/dist/fonts/*.ttf public/fonts/"
   },
   "dependencies": {
     "@jumpcloud/circuit": "^0.0.117",
     "@jumpcloud/icons": "^0.0.4",
     "chart.js": "^4.5.1",
     "primevue": "^4.4.0",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@heroicons/vue": "^2.2.0",

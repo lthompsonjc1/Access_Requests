@@ -7,3 +7,8 @@ storybook-static
 .env
 .env.*
 api-reference/
+dist-demos/
+.generated-demos/
+.demo-*.html
+.wrangler/
+public/fonts/

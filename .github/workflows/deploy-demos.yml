@@ -1,0 +1,99 @@
+name: Deploy Demos
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      demo_id:
+        description: 'Demo ID to deploy (leave empty for all demos)'
+        required: false
+        type: string
+      ref:
+        description: 'R2 ref tag (leave empty for auto: short SHA on dispatch, "latest" on master merge)'
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-2
+          role-to-assume: arn:aws:iam::642920845081:role/GithubActionsCI-circuit-playground
+          role-session-name: GithubActionsSession
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain jumpcloud-artifacts --query authorizationToken --output text)
+          npm install -g pnpm && pnpm install --frozen-lockfile
+
+      - name: Determine ref tag
+        id: ref
+        run: |
+          if [ -n "${{ inputs.ref }}" ]; then
+            echo "tag=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine which demos to build
+        id: demos
+        run: |
+          if [ -n "${{ inputs.demo_id }}" ]; then
+            IDS="${{ inputs.demo_id }}"
+          else
+            IDS=$(grep "id:" src/public-demos/demos.config.ts | sed "s/.*id: '//;s/'.*//" | tr '\n' ' ')
+          fi
+          echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+
+      - name: Build demos
+        run: |
+          for id in ${{ steps.demos.outputs.ids }}; do
+            echo "▸ Building $id"
+            DEMO_ID="$id" npx vite build --config vite.config.demos.ts 2>&1 | tail -1
+            mv "dist-demos/$id/.demo-$id.html" "dist-demos/$id/index.html"
+          done
+
+      - name: Upload to R2 and register in KV
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+          AWS_ACCESS_KEY_ID: ""
+          AWS_SECRET_ACCESS_KEY: ""
+        run: |
+          npm install -g wrangler
+          sudo apt-get install -y rclone -qq
+          REF="${{ steps.ref.outputs.tag }}"
+
+          # Configure rclone for R2 (S3-compatible)
+          export RCLONE_CONFIG_R2_TYPE=s3
+          export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+          export RCLONE_CONFIG_R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}"
+          export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
+          export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+
+          for id in ${{ steps.demos.outputs.ids }}; do
+            echo "▸ Uploading $id → circuit-playground/$id/$REF/"
+            rclone copy "dist-demos/$id/" "r2:jc-customer-demos/circuit-playground/$id/$REF/" --transfers 16 --progress
+
+            echo "▸ Registering demo:$id in KV"
+            wrangler kv key put --namespace-id "$KV_NAMESPACE_ID" --remote \
+              "demo:$id" "{\"r2Prefix\":\"circuit-playground/$id\",\"password\":\"demo\"}"
+          done
+          echo "Done. Ref: $REF"

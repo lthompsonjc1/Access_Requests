@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  id-token: write
   contents: write
 
 jobs:
@@ -22,21 +23,25 @@ jobs:
         if: github.event_name != 'delete'
         uses: actions/checkout@v4
 
+      - name: AWS OIDC login
+        if: github.event_name != 'delete'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-2
+          role-to-assume: arn:aws:iam::642920845081:role/GithubActionsCI-circuit-playground
+          role-session-name: GithubActionsSession
+
       - name: Setup Node
         if: github.event_name != 'delete'
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-
-      - name: Install pnpm
-        if: github.event_name != 'delete'
-        run: npm install -g pnpm
 
       - name: Install and build
         if: github.event_name != 'delete'
         run: |
-          pnpm install --frozen-lockfile
+          export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain jumpcloud-artifacts --query authorizationToken --output text)
+          npm install -g pnpm && pnpm install --frozen-lockfile
           pnpm run build-storybook
 
       - name: Resolve deploy directory
