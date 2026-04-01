@@ -1,0 +1,151 @@
+/* Manager panel — Circuit-aligned via CSS variables where Storybook theme exposes them */
+
+.sb-comments-panel {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--sb-color, #333);
+  background: var(--sb-background, #fff);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sb-comments-panel__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sb-border, #e0e0e0);
+  font-weight: 600;
+}
+
+.sb-comments-panel__scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+  min-height: 0;
+}
+
+.sb-comments-panel__empty {
+  padding: 24px 16px;
+  text-align: center;
+  opacity: 0.7;
+  font-size: 13px;
+}
+
+.sb-comments-thread-row {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--sb-border, #e0e0e0);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  background: var(--sb-background, #fff);
+  color: inherit;
+}
+
+.sb-comments-thread-row:hover {
+  background: var(--sb-hover, rgba(0, 0, 0, 0.04));
+}
+
+.sb-comments-thread-row--active {
+  border-color: var(--sb-selected, #1ea7fd);
+}
+
+.sb-comments-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.sb-comments-badge--open {
+  background: rgba(0, 168, 168, 0.15);
+  color: #007070;
+}
+
+.sb-comments-badge--resolved {
+  background: rgba(0, 0, 0, 0.08);
+  opacity: 0.85;
+}
+
+.sb-comments-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--sb-border, #e0e0e0);
+}
+
+.sb-comments-composer textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sb-border, #ccc);
+  font: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+  background: var(--sb-background, #fff);
+  color: inherit;
+}
+
+.sb-comments-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sb-comments-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--sb-border, #ccc);
+  background: var(--sb-background, #fff);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.sb-comments-btn--primary {
+  background: #1ea7fd;
+  border-color: #1ea7fd;
+  color: #fff;
+}
+
+.sb-comments-btn--danger {
+  color: #c00;
+  border-color: #fcc;
+}
+
+.sb-comments-message {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sb-border, #eee);
+  font-size: 13px;
+}
+
+.sb-comments-message__meta {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.sb-comments-identity {
+  padding: 16px;
+  border-bottom: 1px solid var(--sb-border, #e0e0e0);
+}
+
+.sb-comments-identity input {
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sb-border, #ccc);
+  font: inherit;
+  box-sizing: border-box;
+}

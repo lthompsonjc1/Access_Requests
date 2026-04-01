@@ -272,6 +272,12 @@ export const authStyleOptions = [
   { label: 'SSE', value: 'SSE' },
 ];
 
+/** Phase 01 server dialog — segmented auth control (no SSE) */
+export const phase01AuthStyleOptions = [
+  { label: 'OAuth', value: 'OAuth' },
+  { label: 'API Token', value: 'API Token' },
+];
+
 export const activityLogData: ActivityLogEntry[] = [
   {
     id: 1,
@@ -595,6 +601,11 @@ export const serverDetailTabs = [
 
 export const alt02MainTabs = [
   { label: 'Dashboard', value: 'dashboard' },
+  { label: 'Servers', value: 'servers' },
+  { label: 'Activity Log', value: 'activity' },
+];
+
+export const phase01MainTabs = [
   { label: 'Servers', value: 'servers' },
   { label: 'Activity Log', value: 'activity' },
 ];

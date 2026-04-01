@@ -1,5 +1,6 @@
 import type { Preview, Decorator } from '@storybook/vue3';
 import { setup } from '@storybook/vue3';
+import { decorators as annotationDecorators, initialGlobals as annotationGlobals } from '../src/addons/storybook-comments/preview';
 import PrimeVue from 'primevue/config';
 import ToastService from 'primevue/toastservice';
 import Tooltip from 'primevue/tooltip';
@@ -61,8 +62,9 @@ const preview: Preview = {
   },
   initialGlobals: {
     theme: 'light',
+    ...annotationGlobals,
   },
-  decorators: [withCircuitTheme],
+  decorators: [withCircuitTheme, ...annotationDecorators],
 };
 
 export default preview;

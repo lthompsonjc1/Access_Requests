@@ -1136,7 +1136,7 @@ const DevicesPage = defineComponent({
 });
 
 const meta: Meta<typeof DevicesPage> = {
-  title: 'Projects/Devices Demo/Pages/Device Detail',
+  title: "Projects/Burak's Playground/Pages/Devices",
   component: DevicesPage,
   parameters: {
     layout: 'fullscreen',

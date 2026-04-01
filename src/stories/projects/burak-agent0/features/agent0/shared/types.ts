@@ -63,6 +63,16 @@ export interface ServerFormState {
   authConfig: string;
 }
 
+/** Phase 01 server add/edit dialog — no JSON auth config; prefix replaces target ID */
+export interface Phase01ServerFormState {
+  prefix: string;
+  name: string;
+  url: string;
+  authStyle: string;
+  /** Optional; shown when auth uses API token/key — link for user portal setup help */
+  apiDocumentationUrl: string;
+}
+
 export interface ActivityFilter {
   id?: string | number;
   key: string;

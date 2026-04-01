@@ -11,7 +11,7 @@ function OpenInNewTab() {
 
   if (!story) return null;
 
-  const FORWARDED_GLOBALS = ['theme'];
+  const FORWARDED_GLOBALS = ['theme', 'annotateMode'];
   const globalsQuery = Object.entries(globals)
     .filter(([k, v]) => FORWARDED_GLOBALS.includes(k) && v != null)
     .map(([k, v]) => `${k}:${v}`)
@@ -60,3 +60,6 @@ addons.register(ADDON_ID, () => {
     render: OpenInNewTab,
   });
 });
+
+// Pinned comments addon — manager-side registration
+import '../src/addons/storybook-comments/manager';

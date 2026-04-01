@@ -1079,7 +1079,7 @@ const UserDetailPage = defineComponent({
 // ─── Story Export ───
 
 const meta: Meta<typeof UserDetailPage> = {
-  title: 'Projects/Devices Demo/Pages/User Detail',
+  title: "Projects/Burak's Playground/Pages/User Detail",
   component: UserDetailPage,
   parameters: {
     layout: 'fullscreen',
