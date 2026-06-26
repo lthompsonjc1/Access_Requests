@@ -118,8 +118,35 @@ const initialApprovalFlows: ApprovalFlowRow[] = [
     ],
   },
   { id: 'f1', name: 'Sudo Admin - 1 hr', flowType: 'Device Admin', userGroupAssignment: '', approvalMode: 'Manual', enabled: true },
-  { id: 'f2', name: 'Confluence - Users', flowType: 'Resource Approval', userGroupAssignment: 'Confluence For Users', approvalMode: 'Manual', enabled: true },
-  { id: 'f3', name: 'UX Tools', flowType: 'Resource Approval', userGroupAssignment: 'Design Tools', approvalMode: 'Automatic', enabled: true },
+  {
+    id: 'f2',
+    name: 'Confluence - Users',
+    flowType: 'Resource Approval',
+    userGroupAssignment: 'Confluence For Users',
+    approvalMode: 'Manual',
+    enabled: true,
+    expansionDescription:
+      'Grants Confluence user permissions to members of the assigned user group after manager and team lead approval.',
+    configurationSteps: [
+      { name: 'Sarah Chen', roleLabel: 'Required Approver' },
+      { name: 'Marcus Webb', roleLabel: 'Required Approver' },
+      { name: 'Elena Vasquez', roleLabel: 'Optional Approver' },
+    ],
+  },
+  {
+    id: 'f3',
+    name: 'UX Tools',
+    flowType: 'Resource Approval',
+    userGroupAssignment: 'Design Tools',
+    approvalMode: 'Automatic',
+    enabled: true,
+    expansionDescription:
+      'Provides access to UX and design tooling for designers; automatic approval when eligibility criteria are met.',
+    configurationSteps: [
+      { name: 'Priya Narayan', roleLabel: 'Required Approver' },
+      { name: 'David Okonkwo', roleLabel: 'Optional Approver' },
+    ],
+  },
   { id: 'f4', name: 'DEV Tools', flowType: 'Device Admin', userGroupAssignment: '', approvalMode: 'Automatic', enabled: true },
 ];
 
@@ -143,6 +170,16 @@ interface DeviceAdminSessionRow {
 }
 
 const TIMED_ACCESS_TOTAL_MOCK = 300;
+const PAGINATION_THRESHOLD = 10;
+
+function shouldShowTablePaginator(total: number): boolean {
+  return total >= PAGINATION_THRESHOLD;
+}
+
+function formatCompactPageReport(total: number): string {
+  if (total <= 0) return '0-0 of 0';
+  return `1-${total} of ${total}`;
+}
 
 function buildTimedAccessRows(): TimedAccessSessionRow[] {
   const rows: TimedAccessSessionRow[] = [
@@ -187,7 +224,6 @@ function buildTimedAccessRows(): TimedAccessSessionRow[] {
 const deviceAdminSessionsData: DeviceAdminSessionRow[] = [
   { id: 'da-1', user: 'Jamie Rivera', device: 'MacBook Pro #4421', os: 'macOS', timeRemainingLabel: '4h:23m' },
   { id: 'da-2', user: 'Mel Park', device: 'Windows VM #882', os: 'Windows', timeRemainingLabel: '0h:45m' },
-  { id: 'da-3', user: 'Avery Singh', device: 'Linux server prod-03', os: 'Linux', timeRemainingLabel: '12h:7m' },
   { id: 'da-4', user: 'Quinn Frost', device: 'Chromebook fleet #1204', os: 'Chrome OS', timeRemainingLabel: '23h:59m' },
 ];
 
@@ -378,7 +414,7 @@ const ActiveSessionRevokeCell = defineComponent({
     sessionId: { type: String, required: true },
   },
   template: `
-    <div class="flex items-center justify-end p-2 min-h-12">
+    <div class="flex items-center p-2 min-h-12">
       <Button label="Revoke" severity="danger" variant="outlined" size="small" :aria-label="'Revoke session ' + sessionId" />
     </div>
   `,
@@ -422,7 +458,6 @@ const timedAccessColumns = [
     field: 'user',
     header: 'User',
     sortable: true,
-    width: '180px',
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.user as string,
@@ -433,7 +468,6 @@ const timedAccessColumns = [
     field: 'approvalFlow',
     header: 'Approval Flow',
     sortable: true,
-    width: '200px',
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.approvalFlow as string,
@@ -444,7 +478,6 @@ const timedAccessColumns = [
     field: 'groupAssignment',
     header: 'Group Assignment',
     sortable: true,
-    width: '220px',
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.groupAssignment as string,
@@ -455,7 +488,6 @@ const timedAccessColumns = [
     field: 'timeRemainingLabel',
     header: 'Time Remaining',
     sortable: true,
-    width: '160px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.timeRemainingLabel as string,
@@ -463,8 +495,7 @@ const timedAccessColumns = [
   },
   {
     field: 'actions',
-    header: '',
-    width: '120px',
+    header: 'Actions',
     component: markRaw(ActiveSessionRevokeCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       sessionId: sp.data.id as string,
@@ -477,7 +508,6 @@ const deviceAdminSessionColumns = [
     field: 'user',
     header: 'User',
     sortable: true,
-    width: '200px',
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.user as string,
@@ -488,7 +518,6 @@ const deviceAdminSessionColumns = [
     field: 'device',
     header: 'Device',
     sortable: true,
-    width: '220px',
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.device as string,
@@ -499,7 +528,6 @@ const deviceAdminSessionColumns = [
     field: 'os',
     header: 'OS',
     sortable: true,
-    width: '140px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.os as string,
@@ -509,7 +537,6 @@ const deviceAdminSessionColumns = [
     field: 'timeRemainingLabel',
     header: 'Time Remaining',
     sortable: true,
-    width: '160px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.timeRemainingLabel as string,
@@ -517,8 +544,7 @@ const deviceAdminSessionColumns = [
   },
   {
     field: 'actions',
-    header: '',
-    width: '120px',
+    header: 'Actions',
     component: markRaw(ActiveSessionRevokeCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       sessionId: sp.data.id as string,
@@ -529,12 +555,11 @@ const deviceAdminSessionColumns = [
 // ─── Column Definitions (order matches image) ───
 // Progress column only shown for Others tab (multi-step approvals); Administrator approves all directly
 
-const allColumns = [
+const requestQueueAdministratorColumns = [
   {
     field: 'received',
     header: 'Received',
     sortable: true,
-    width: '200px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.received as string,
@@ -544,7 +569,6 @@ const allColumns = [
     field: 'type',
     header: 'Type',
     sortable: true,
-    width: '120px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.type as string,
@@ -554,7 +578,6 @@ const allColumns = [
     field: 'name',
     header: 'Name',
     sortable: true,
-    width: '180px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.name as string,
@@ -564,7 +587,6 @@ const allColumns = [
     field: 'requester',
     header: 'Requester',
     sortable: true,
-    width: '180px',
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.requester as string,
@@ -575,7 +597,6 @@ const allColumns = [
     field: 'department',
     header: 'Department',
     sortable: true,
-    width: '130px',
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.department as string,
@@ -585,7 +606,83 @@ const allColumns = [
     field: 'approvalType',
     header: 'Approval Mode',
     sortable: true,
-    width: '140px',
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.approvalType as string,
+    }),
+  },
+  {
+    field: 'status',
+    header: 'Status',
+    sortable: true,
+    component: markRaw(StatusCell),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      statusLabel: sp.data.status as string,
+      tokenMapping: statusTokenMapping,
+    }),
+  },
+  {
+    field: 'actions',
+    header: 'Actions',
+    component: markRaw(ActionsCell),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      status: sp.data.status as string,
+      requestId: sp.data.id as number,
+    }),
+  },
+];
+
+const requestQueueOthersColumns = [
+  {
+    field: 'received',
+    header: 'Received',
+    sortable: true,
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.received as string,
+    }),
+  },
+  {
+    field: 'type',
+    header: 'Type',
+    sortable: true,
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.type as string,
+    }),
+  },
+  {
+    field: 'name',
+    header: 'Name',
+    sortable: true,
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.name as string,
+    }),
+  },
+  {
+    field: 'requester',
+    header: 'Requester',
+    sortable: true,
+    component: markRaw(DataTableCellLink),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.requester as string,
+      href: '#',
+    }),
+  },
+  {
+    field: 'department',
+    header: 'Department',
+    sortable: true,
+    component: markRaw(DataTableCellText),
+    componentProps: (sp: { data: Record<string, unknown> }) => ({
+      label: sp.data.department as string,
+    }),
+  },
+  {
+    field: 'approvalType',
+    header: 'Approval Mode',
+    sortable: true,
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       label: sp.data.approvalType as string,
@@ -595,7 +692,6 @@ const allColumns = [
     field: 'approvalProgressStatus',
     header: 'Progress',
     sortable: true,
-    width: '180px',
     component: markRaw(ProgressCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       approvedCount: (sp.data.approvedCount as number) ?? 0,
@@ -606,7 +702,6 @@ const allColumns = [
     field: 'status',
     header: 'Status',
     sortable: true,
-    width: '120px',
     component: markRaw(StatusCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       statusLabel: sp.data.status as string,
@@ -615,8 +710,7 @@ const allColumns = [
   },
   {
     field: 'actions',
-    header: '',
-    width: '60px',
+    header: 'Actions',
     component: markRaw(ActionsCell),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       status: sp.data.status as string,
@@ -662,12 +756,12 @@ const basicFilters = [
 
 const mainTabs = [
   { label: 'Request Queue (6)', value: 'request-queue' },
-  { label: 'Active Sessions (7)', value: 'active-sessions' },
+  { label: 'Active Sessions (6)', value: 'active-sessions' },
   { label: 'Approval Flows (5)', value: 'approval-flows' },
 ];
 
 const activeSessionsSubTabOptions = [
-  { label: 'Device Admin (4)', value: 'device-admin' },
+  { label: 'Device Admin (3)', value: 'device-admin' },
   { label: 'Timed Access (3)', value: 'timed-access' },
 ];
 
@@ -853,7 +947,6 @@ const AccessRequestsListPage = defineComponent({
         field: 'name',
         header: 'Name',
         sortable: true,
-        width: '280px',
         component: markRaw(FlowNameCell),
         componentProps: (sp: { data: Record<string, unknown> }) => ({
           name: sp.data.name as string,
@@ -863,7 +956,6 @@ const AccessRequestsListPage = defineComponent({
         field: 'flowType',
         header: 'Flow Type',
         sortable: true,
-        width: '168px',
         component: markRaw(DataTableCellText),
         componentProps: (sp: { data: Record<string, unknown> }) => ({
           label: sp.data.flowType as string,
@@ -873,7 +965,6 @@ const AccessRequestsListPage = defineComponent({
         field: 'userGroupAssignment',
         header: 'User Group Assignment',
         sortable: true,
-        width: '220px',
         component: markRaw(DataTableCellText),
         componentProps: (sp: { data: Record<string, unknown> }) => {
           if (sp.data.flowType === 'Device Admin') {
@@ -887,7 +978,6 @@ const AccessRequestsListPage = defineComponent({
         field: 'approvalMode',
         header: 'Approval Mode',
         sortable: true,
-        width: '140px',
         component: markRaw(DataTableCellText),
         componentProps: (sp: { data: Record<string, unknown> }) => ({
           label: sp.data.approvalMode as string,
@@ -897,7 +987,6 @@ const AccessRequestsListPage = defineComponent({
         field: 'status',
         header: 'Status',
         sortable: true,
-        width: '220px',
         component: markRaw(FlowEnabledStatusCell),
         componentProps: (sp: { data: Record<string, unknown> }) => ({
           enabled: (sp.data.enabled as boolean) !== false,
@@ -907,8 +996,7 @@ const AccessRequestsListPage = defineComponent({
       },
       {
         field: 'actions',
-        header: '',
-        width: '56px',
+        header: 'Actions',
         component: markRaw(FlowActionsCell),
         componentProps: () => ({}),
       },
@@ -1049,8 +1137,8 @@ const AccessRequestsListPage = defineComponent({
 
     const columns = computed(() =>
       activeSubTab.value === 'others'
-        ? allColumns
-        : allColumns.filter((c) => c.field !== 'approvalProgressStatus'),
+        ? requestQueueOthersColumns
+        : requestQueueAdministratorColumns,
     );
 
     const currentPageData = computed(() => {
@@ -1086,6 +1174,19 @@ const AccessRequestsListPage = defineComponent({
       });
     });
     const totalRecords = computed(() => currentPageData.value.length);
+
+    const showRequestQueuePaginator = computed(() =>
+      shouldShowTablePaginator(totalRecords.value),
+    );
+    const showTimedAccessPaginator = computed(() =>
+      shouldShowTablePaginator(timedAccessRows.value.length),
+    );
+    const showDeviceAdminPaginator = computed(() =>
+      shouldShowTablePaginator(deviceAdminRows.value.length),
+    );
+    const showApprovalFlowsPaginator = computed(() =>
+      shouldShowTablePaginator(approvalFlowsTotalRecords.value),
+    );
 
     function handleSearch(_query: string) {
       // Placeholder for search
@@ -1208,8 +1309,8 @@ const AccessRequestsListPage = defineComponent({
         style: 'flex: 1 1 0; min-height: 0; height: 100%; width: 100%; min-width: 0;',
       },
       table: {
-        class: '!min-w-full w-full',
-        style: 'table-layout: fixed;',
+        class: '!min-w-full w-full !max-w-none',
+        style: 'table-layout: fixed; width: 100%; min-width: 100%;',
       },
       rowExpansion: {
         class: '!max-w-none w-full min-w-0',
@@ -1229,6 +1330,11 @@ const AccessRequestsListPage = defineComponent({
       columns,
       currentPageData,
       totalRecords,
+      showRequestQueuePaginator,
+      showTimedAccessPaginator,
+      showDeviceAdminPaginator,
+      showApprovalFlowsPaginator,
+      formatCompactPageReport,
       showFilterModal,
       basicFilters,
       appliedFilters,
@@ -1351,7 +1457,7 @@ const AccessRequestsListPage = defineComponent({
         </PageHeader>
 
         <template v-if="!showSettings">
-        <div v-if="activeMainTab === 'request-queue'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch px-6 pb-6">
+        <div v-if="activeMainTab === 'request-queue'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-hidden bg-neutral-surface px-6 pb-6">
           <!-- Sub-tabs: Administrator / Others (matches Device Detail pattern) -->
           <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
             <SelectButton
@@ -1387,12 +1493,12 @@ const AccessRequestsListPage = defineComponent({
             </DataTableToolbar>
           </div>
 
-          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
             <CircuitDataTable
               class="min-h-0 min-w-0 w-full flex-1"
               :data="currentPageData"
               :columns="columns"
-              :paginator="true"
+              :paginator="showRequestQueuePaginator"
               :rows="50"
               :total-records="totalRecords"
               :rows-per-page-options="[
@@ -1400,9 +1506,9 @@ const AccessRequestsListPage = defineComponent({
                 { label: '20 Items per page', value: 20 },
                 { label: '50 Items per page', value: 50 },
               ]"
-              :show-rows-per-page-options="true"
+              :show-rows-per-page-options="showRequestQueuePaginator"
               :show-page-report="true"
-              :card="true"
+              :card="false"
               size="default"
               :expander="true"
               scrollable
@@ -1579,6 +1685,12 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </template>
             </CircuitDataTable>
+            <p
+              v-if="!showRequestQueuePaginator && totalRecords > 0"
+              class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+            >
+              {{ formatCompactPageReport(totalRecords) }}
+            </p>
           </div>
 
           <FilterModal
@@ -1590,7 +1702,7 @@ const AccessRequestsListPage = defineComponent({
           />
         </div>
 
-        <div v-if="activeMainTab === 'active-sessions'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch px-6 pb-6">
+        <div v-if="activeMainTab === 'active-sessions'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-hidden bg-neutral-surface px-6 pb-6">
           <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
             <SelectButton
               v-model="activeSessionsSubTab"
@@ -1632,14 +1744,14 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </div>
 
-            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
                 :data="timedAccessRows"
                 :columns="timedAccessColumns"
                 selection-mode="multiple"
                 v-model:selection="timedAccessSelection"
-                :paginator="true"
+                :paginator="showTimedAccessPaginator"
                 :rows="20"
                 :total-records="timedAccessRows.length"
                 :rows-per-page-options="[
@@ -1647,9 +1759,9 @@ const AccessRequestsListPage = defineComponent({
                   { label: '20 Items per page', value: 20 },
                   { label: '50 Items per page', value: 50 },
                 ]"
-                :show-rows-per-page-options="true"
+                :show-rows-per-page-options="showTimedAccessPaginator"
                 :show-page-report="true"
-                :card="true"
+                :card="false"
                 size="default"
                 scrollable
                 scroll-height="flex"
@@ -1670,10 +1782,16 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                 </template>
               </CircuitDataTable>
+              <p
+                v-if="!showTimedAccessPaginator && timedAccessRows.length > 0"
+                class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+              >
+                {{ formatCompactPageReport(timedAccessRows.length) }}
+              </p>
             </div>
           </template>
 
-          <template v-else>
+          <template v-else-if="activeSessionsSubTab === 'device-admin'">
             <div class="flex shrink-0 w-full min-w-0 items-start gap-sm pb-4">
               <div class="min-w-0 flex-1">
                 <DataTableToolbar
@@ -1705,14 +1823,14 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </div>
 
-            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
                 :data="deviceAdminRows"
                 :columns="deviceAdminSessionColumns"
                 selection-mode="multiple"
                 v-model:selection="deviceAdminSelection"
-                :paginator="true"
+                :paginator="showDeviceAdminPaginator"
                 :rows="20"
                 :total-records="deviceAdminRows.length"
                 :rows-per-page-options="[
@@ -1720,9 +1838,9 @@ const AccessRequestsListPage = defineComponent({
                   { label: '20 Items per page', value: 20 },
                   { label: '50 Items per page', value: 50 },
                 ]"
-                :show-rows-per-page-options="true"
+                :show-rows-per-page-options="showDeviceAdminPaginator"
                 :show-page-report="true"
-                :card="true"
+                :card="false"
                 size="default"
                 scrollable
                 scroll-height="flex"
@@ -1741,13 +1859,19 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                 </template>
               </CircuitDataTable>
+              <p
+                v-if="!showDeviceAdminPaginator && deviceAdminRows.length > 0"
+                class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+              >
+                {{ formatCompactPageReport(deviceAdminRows.length) }}
+              </p>
             </div>
           </template>
 
           <Menu ref="activeSessionsActionsMenuRef" :model="activeSessionsActionsMenuItems" :popup="true" />
         </div>
 
-        <div v-if="activeMainTab === 'approval-flows'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch px-6 pb-6">
+        <div v-if="activeMainTab === 'approval-flows'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-hidden bg-neutral-surface px-6 pb-6">
           <div class="shrink-0 w-full min-w-0 pt-6 pb-4">
             <DataTableToolbar
               add-button-label="Add Approval Flow"
@@ -1768,12 +1892,12 @@ const AccessRequestsListPage = defineComponent({
             />
           </div>
 
-          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
             <CircuitDataTable
               class="min-h-0 min-w-0 w-full flex-1"
               :data="filteredApprovalFlows"
               :columns="approvalFlowColumns"
-              :paginator="true"
+              :paginator="showApprovalFlowsPaginator"
               :rows="20"
               :total-records="approvalFlowsTotalRecords"
               :rows-per-page-options="[
@@ -1781,9 +1905,9 @@ const AccessRequestsListPage = defineComponent({
                 { label: '20 Items per page', value: 20 },
                 { label: '50 Items per page', value: 50 },
               ]"
-              :show-rows-per-page-options="true"
+              :show-rows-per-page-options="showApprovalFlowsPaginator"
               :show-page-report="true"
-              :card="true"
+              :card="false"
               size="default"
               :expander="true"
               scrollable
@@ -1796,7 +1920,10 @@ const AccessRequestsListPage = defineComponent({
               <div
                 class="box-border flex w-full min-w-0 max-w-none flex-col gap-4 border-t border-neutral-default_solid bg-neutral-surface p-md text-start"
               >
-                <p v-if="data.expansionDescription" class="text-body-md text-neutral-base">
+                <p v-if="data.flowType === 'Device Admin'" class="text-body-md text-neutral-base">
+                  Device admin flows are approved by administrators.
+                </p>
+                <p v-else-if="data.expansionDescription" class="text-body-md text-neutral-base">
                   {{ data.expansionDescription }}
                 </p>
                 <p v-else class="text-body-md text-neutral-subtle">
@@ -1854,6 +1981,12 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </template>
             </CircuitDataTable>
+            <p
+              v-if="!showApprovalFlowsPaginator && approvalFlowsTotalRecords > 0"
+              class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+            >
+              {{ formatCompactPageReport(approvalFlowsTotalRecords) }}
+            </p>
           </div>
         </div>
 
