@@ -723,34 +723,158 @@ const requestQueueOthersColumns = [
 
 const basicFilters = [
   {
+    id: 'received',
+    label: 'Received',
+    type: 'date' as const,
+  },
+  {
     id: 'requester',
     label: 'Requester',
     type: 'text' as const,
-    placeholder: 'Search requester...',
+    placeholder: 'Search',
+  },
+  {
+    id: 'type',
+    label: 'Type',
+    type: 'multiSelect' as const,
+    options: [
+      { label: 'Resource', value: 'Resource Approval' },
+      { label: 'Device Admin', value: 'Device Admin' },
+    ],
   },
   {
     id: 'approvalType',
-    label: 'Approval Mode',
-    type: 'singleSelect' as const,
+    label: 'Approval Type',
+    type: 'multiSelect' as const,
     options: [
       { label: 'Manual', value: 'Manual' },
-      { label: 'Automatic', value: 'Automatic' },
+      { label: 'Auto-Approval', value: 'Automatic' },
     ],
   },
   {
     id: 'status',
     label: 'Status',
-    type: 'singleSelect' as const,
+    type: 'multiSelect' as const,
     options: [
-      { label: 'Error', value: 'Error' },
-      { label: 'Missing Data', value: 'Missing Data' },
+      { label: 'Active', value: 'Active' },
       { label: 'Pending', value: 'Pending' },
       { label: 'Approved', value: 'Approved' },
       { label: 'Denied', value: 'Denied' },
+      { label: 'Deprovisioned', value: 'Deprovisioned' },
+      { label: 'Error', value: 'Error' },
       { label: 'Expired', value: 'Expired' },
+      { label: 'Canceled', value: 'Canceled' },
+      { label: 'Missing Data', value: 'Missing Data' },
     ],
   },
 ];
+
+type AppliedFilterChip = {
+  id: string;
+  key: string;
+  operator: string;
+  value: string;
+};
+
+type ModalAppliedFilter = {
+  id: string;
+  value: string | string[] | { operator: string; value: string } | null;
+};
+
+const FILTER_ID_TO_KEY: Record<string, string> = {
+  requester: 'Requester',
+  received: 'Received',
+  type: 'Type',
+  approvalType: 'Approval Mode',
+  status: 'Status',
+};
+
+const FILTER_KEY_TO_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(FILTER_ID_TO_KEY).map(([id, key]) => [key, id]),
+);
+
+const MULTI_SELECT_FILTER_IDS = new Set(['type', 'approvalType', 'status']);
+
+function chipsToModalFilters(chips: AppliedFilterChip[]): ModalAppliedFilter[] {
+  const byId = new Map<string, ModalAppliedFilter>();
+
+  for (const chip of chips) {
+    const id = FILTER_KEY_TO_ID[chip.key] ?? chip.id;
+    if (!id) continue;
+
+    if (MULTI_SELECT_FILTER_IDS.has(id)) {
+      const existing = byId.get(id);
+      const values =
+        existing && Array.isArray(existing.value) ? [...existing.value] : [];
+      values.push(chip.value);
+      byId.set(id, { id, value: values });
+    } else if (id === 'requester' || id === 'received') {
+      byId.set(id, {
+        id,
+        value: { operator: chip.operator || 'contains', value: chip.value },
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+function modalFiltersToChips(filters: ModalAppliedFilter[]): AppliedFilterChip[] {
+  const chips: AppliedFilterChip[] = [];
+  let chipIndex = 0;
+
+  for (const filter of filters) {
+    const key = FILTER_ID_TO_KEY[filter.id] ?? filter.id;
+    if (filter.value === null || filter.value === undefined) continue;
+
+    if (Array.isArray(filter.value)) {
+      for (const value of filter.value) {
+        chips.push({
+          id: `${filter.id}-${chipIndex++}`,
+          key,
+          operator: 'is',
+          value: String(value),
+        });
+      }
+      continue;
+    }
+
+    if (typeof filter.value === 'object' && 'operator' in filter.value) {
+      const filterValue = filter.value;
+      if (!filterValue.value?.trim()) continue;
+      chips.push({
+        id: `${filter.id}-${chipIndex++}`,
+        key,
+        operator: filterValue.operator,
+        value: filterValue.value,
+      });
+      continue;
+    }
+
+    if (typeof filter.value === 'string' && filter.value.trim() !== '') {
+      chips.push({
+        id: `${filter.id}-${chipIndex++}`,
+        key,
+        operator: 'is',
+        value: filter.value,
+      });
+    }
+  }
+
+  return chips;
+}
+
+function parseReceivedDate(received: string): Date | null {
+  const parsed = new Date(received);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseIsoDate(value: string): Date | null {
+  const [year, month, day] = value.split('-').map((part) => Number(part));
+  if (!year || !month || !day) return null;
+  const parsed = new Date(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 // ─── Main tabs and sub-tabs ───
 
@@ -851,7 +975,8 @@ const AccessRequestsListPage = defineComponent({
   setup(props) {
     const requests = ref<AccessRequest[]>([...accessRequestsData]);
     const showFilterModal = ref(false);
-    const appliedFilters = ref(initialFilters);
+    const appliedFilters = ref<AppliedFilterChip[]>(initialFilters);
+    const filterModalAppliedFilters = computed(() => chipsToModalFilters(appliedFilters.value));
     const activeMainTab = ref(props.initialMainTab);
     const activeSubTab = ref(props.initialSubTab);
     const activeSessionsSubTab = ref(props.initialActiveSessionsSubTab);
@@ -1163,11 +1288,49 @@ const AccessRequestsListPage = defineComponent({
             const reqFilter = keyFilters[0];
             if (reqFilter?.value) {
               const search = reqFilter.value.toLowerCase();
-              if (!r.requester.toLowerCase().includes(search)) return false;
+              const requester = r.requester.toLowerCase();
+              if (reqFilter.operator === 'equals' && requester !== search) return false;
+              if (reqFilter.operator === 'notEquals' && requester === search) return false;
+              if (reqFilter.operator === 'startsWith' && !requester.startsWith(search)) return false;
+              if (reqFilter.operator === 'endsWith' && !requester.endsWith(search)) return false;
+              if (reqFilter.operator === 'notContains' && requester.includes(search)) return false;
+              if (
+                (reqFilter.operator === 'contains' || reqFilter.operator === 'is') &&
+                !requester.includes(search)
+              ) {
+                return false;
+              }
             }
+          } else if (key === 'Type') {
+            const typeValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+            if (typeValues.length && !typeValues.includes(r.type)) return false;
           } else if (key === 'Approval Mode') {
-            const typeFilter = keyFilters[0];
-            if (typeFilter?.value && r.approvalType !== typeFilter.value) return false;
+            const approvalValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+            if (approvalValues.length && !approvalValues.includes(r.approvalType)) return false;
+          } else if (key === 'Received') {
+            const dateFilter = keyFilters[0];
+            if (dateFilter?.value) {
+              const receivedDate = parseReceivedDate(r.received);
+              const filterDate = parseIsoDate(dateFilter.value);
+              if (receivedDate && filterDate) {
+                if (dateFilter.operator === 'isBefore') {
+                  const receivedDay = new Date(
+                    receivedDate.getFullYear(),
+                    receivedDate.getMonth(),
+                    receivedDate.getDate(),
+                  );
+                  if (receivedDay >= filterDate) return false;
+                }
+                if (dateFilter.operator === 'isAfter') {
+                  const receivedDay = new Date(
+                    receivedDate.getFullYear(),
+                    receivedDate.getMonth(),
+                    receivedDate.getDate(),
+                  );
+                  if (receivedDay <= filterDate) return false;
+                }
+              }
+            }
           }
         }
         return true;
@@ -1208,8 +1371,8 @@ const AccessRequestsListPage = defineComponent({
       }
     }
 
-    function handleFilterApply(filters: { key: string; operator: string; value: string; id?: string }[]) {
-      appliedFilters.value = filters.map((f, i) => ({ ...f, id: f.id ?? `filter-${i}` }));
+    function handleFilterApply(filters: ModalAppliedFilter[]) {
+      appliedFilters.value = modalFiltersToChips(filters);
       showFilterModal.value = false;
     }
 
@@ -1338,6 +1501,7 @@ const AccessRequestsListPage = defineComponent({
       showFilterModal,
       basicFilters,
       appliedFilters,
+      filterModalAppliedFilters,
       mainTabs,
       subTabOptions,
       activeMainTab,
@@ -1696,7 +1860,7 @@ const AccessRequestsListPage = defineComponent({
           <FilterModal
             v-model:visible="showFilterModal"
             :basic-filters="basicFilters"
-            :applied-filters="appliedFilters"
+            :applied-filters="filterModalAppliedFilters"
             @apply="handleFilterApply"
             @clear-all="handleFilterClearAll"
           />
@@ -1737,10 +1901,15 @@ const AccessRequestsListPage = defineComponent({
                   label="Actions"
                   severity="secondary"
                   variant="outlined"
+                  icon-pos="right"
                   aria-haspopup="true"
                   aria-label="Open actions menu"
                   @click="toggleActiveSessionsActionsMenu"
-                />
+                >
+                  <template #icon>
+                    <ChevronDownIcon class="size-4" aria-hidden="true" />
+                  </template>
+                </Button>
               </div>
             </div>
 
@@ -1816,10 +1985,15 @@ const AccessRequestsListPage = defineComponent({
                   label="Actions"
                   severity="secondary"
                   variant="outlined"
+                  icon-pos="right"
                   aria-haspopup="true"
                   aria-label="Open actions menu"
                   @click="toggleActiveSessionsActionsMenu"
-                />
+                >
+                  <template #icon>
+                    <ChevronDownIcon class="size-4" aria-hidden="true" />
+                  </template>
+                </Button>
               </div>
             </div>
 
