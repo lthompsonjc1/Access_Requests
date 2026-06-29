@@ -3,7 +3,6 @@ import { defineComponent, ref, watch } from 'vue';
 import {
   AppNavigation,
   PageHeader,
-  ToggleSwitch,
   CheckboxWithLabel,
   FormField,
   LinkText,
@@ -11,7 +10,6 @@ import {
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import Dialog from 'primevue/dialog';
-import Divider from 'primevue/divider';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
@@ -21,12 +19,14 @@ import {
   ClipboardDocumentCheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  InformationCircleIcon,
   MagnifyingGlassIcon,
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline';
 
+import ConfigPageLayout from '@/components/layout/page-layouts/ConfigPageLayout.vue';
+import PageSection from '@/components/PageSection.vue';
+import SettingCardItem from '@/components/setting-card/SettingCardItem.vue';
 import TopBar from '@/components/TopBar.vue';
 import {
   ACCESS_REQUESTS_LIST_STORY_PATH,
@@ -43,20 +43,23 @@ import {
   webhookChannelEventsTagLabel,
 } from '../shared/webhookChannelSettings';
 
+const settingCardClass = 'w-full rounded-lg bg-neutral-surface shadow-e100';
+
 const AccessRequestSettingsPage = defineComponent({
   name: 'AccessRequestSettingsPage',
   components: {
     AppNavigation,
     PageHeader,
     TopBar,
-    ToggleSwitch,
+    ConfigPageLayout,
+    PageSection,
+    SettingCardItem,
     Checkbox,
     CheckboxWithLabel,
     FormField,
     LinkText,
     Button,
     Dialog,
-    Divider,
     IconField,
     InputIcon,
     InputText,
@@ -65,7 +68,6 @@ const AccessRequestSettingsPage = defineComponent({
     ClipboardDocumentCheckIcon,
     ChevronDownIcon,
     ChevronUpIcon,
-    InformationCircleIcon,
     MagnifyingGlassIcon,
     TrashIcon,
     XMarkIcon,
@@ -127,6 +129,7 @@ const AccessRequestSettingsPage = defineComponent({
     return {
       menuItems,
       profileMenuItems,
+      settingCardClass,
       accessRequestsOn,
       notifyViaEmail,
       notifyRequestReceived,
@@ -170,99 +173,138 @@ const AccessRequestSettingsPage = defineComponent({
           </PageHeader>
 
           <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-neutral-surface">
-            <div class="flex w-full min-w-0 flex-col gap-6 px-6 py-6">
-              <div
-                class="flex max-w-[1024px] flex-col gap-6 rounded-lg border border-neutral-default_solid bg-neutral-base p-md"
-              >
-                <div class="flex flex-col gap-2">
-                  <h2 class="text-heading-3 text-neutral-base">Access Request Settings</h2>
-                  <p class="text-body-md text-neutral-base">
-                    Configure Resource Access settings for your organization.
-                    <span class="inline-flex items-center gap-0.5 align-middle">
-                      <LinkText label="Learn More" href="#" class="text-body-md" />
-                      <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-info-base" aria-hidden="true" />
-                    </span>
-                  </p>
-                </div>
-
-                <Divider />
-
-                <div class="flex items-start gap-md">
-                  <ToggleSwitch v-model="accessRequestsOn" aria-label="Access requests enabled" />
-                  <div class="flex min-w-0 flex-col gap-1">
-                    <span class="text-body-md-semi-bold text-neutral-base">Access Requests On</span>
-                    <p class="text-body-sm text-neutral-subtle">
-                      Enabling this feature will allow end users to request access to resources from their user portal.
-                    </p>
-                  </div>
-                </div>
-
-                <Divider />
-
-                <div class="flex flex-col gap-4">
-                  <h3 class="text-heading-4 text-neutral-base">Notifications</h3>
-                  <div class="flex flex-col gap-3">
-                    <span class="text-body-md text-neutral-base">Receive Access Request Notifications via:</span>
-                    <CheckboxWithLabel v-model="notifyViaEmail" :binary="true">
-                      <template #label>Email</template>
-                    </CheckboxWithLabel>
-                  </div>
-                  <div class="flex flex-col gap-3">
-                    <span class="text-body-md text-neutral-base">
-                      Send end user notification emails for the following events:
-                    </span>
-                    <CheckboxWithLabel v-model="notifyRequestReceived" :binary="true">
-                      <template #label>Request Received Confirmation</template>
-                    </CheckboxWithLabel>
-                    <CheckboxWithLabel v-model="notifyApprovalDenial" :binary="true">
-                      <template #label>Request Approval/Denial</template>
-                    </CheckboxWithLabel>
-                  </div>
-                </div>
-
-                <Divider />
-
-                <div class="flex flex-col gap-3">
-                  <h3 class="text-heading-4 text-neutral-base">Approver Progress Indicator</h3>
-                  <CheckboxWithLabel v-model="exposeApprovalProgress" :binary="true">
-                    <template #label>
-                      <span class="inline-flex items-center gap-sm">
-                        <span>Expose the Approval Progress to end users</span>
-                        <InformationCircleIcon
-                          v-tooltip.top="'When enabled, end users can see approval status in their portal.'"
-                          class="size-4 shrink-0 text-neutral-subtle"
-                          aria-hidden="true"
-                        />
+            <ConfigPageLayout class="w-full! h-full!" maxWidth="1024">
+              <div class="flex flex-col gap-8 pb-xl">
+                <section class="flex flex-col gap-4">
+                  <PageSection title="Access Request Settings">
+                    <template #actions><span /></template>
+                    <template #subtitle>
+                      <span class="text-body-sm text-neutral-muted">
+                        Configure Resource Access settings for your organization.
+                        <LinkText
+                          href="#"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          :showIcon="false"
+                          customClass="text-body-sm-link inline-flex items-center gap-1"
+                        >
+                          Learn More
+                          <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-current" aria-hidden="true" />
+                        </LinkText>
                       </span>
                     </template>
-                  </CheckboxWithLabel>
-                </div>
+                  </PageSection>
 
-                <Divider />
+                  <div :class="settingCardClass">
+                    <SettingCardItem
+                      v-model:toggle-value="accessRequestsOn"
+                      title="Access Requests On"
+                      :has-bottom-border="false"
+                    >
+                      <template #description>
+                        <span class="text-body-sm text-neutral-muted">
+                          Enabling this feature will allow end users to request access to resources from their user portal.
+                        </span>
+                      </template>
+                    </SettingCardItem>
+                  </div>
+                </section>
 
-                <div class="flex flex-col gap-4">
-                  <h3 class="text-heading-4 text-neutral-base">Webhook Notifications</h3>
-                  <p class="text-body-md text-neutral-base">
-                    Receive Access Request event notifications using your already configured webhook channels.
-                    <span class="inline-flex items-center gap-0.5 align-middle">
-                      <LinkText label="Learn More" href="#" class="text-body-md" />
-                      <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-info-base" aria-hidden="true" />
-                    </span>
-                  </p>
-                  <Button
-                    label="Select Channel"
-                    severity="secondary"
-                    variant="outlined"
-                    class="w-fit shrink-0 self-start"
-                    @click="openSelectChannelModal"
-                  />
+                <section class="flex flex-col gap-4">
+                  <PageSection title="Notifications">
+                    <template #actions><span /></template>
+                    <template #subtitle>
+                      <span class="text-body-sm text-neutral-muted">
+                        Configure admin and end user email notifications for access request events.
+                      </span>
+                    </template>
+                  </PageSection>
+
+                  <div :class="settingCardClass">
+                    <SettingCardItem
+                      v-model:toggle-value="notifyViaEmail"
+                      title="Email"
+                      :has-bottom-border="notifyViaEmail"
+                    >
+                      <template #description>
+                        <span class="text-body-sm text-neutral-muted">
+                          Receive Access Request notifications via email.
+                        </span>
+                      </template>
+                    </SettingCardItem>
+
+                    <div
+                      v-if="notifyViaEmail"
+                      class="flex flex-col gap-4 px-4 pb-4 pt-2"
+                    >
+                      <h4 class="text-body-md-bold text-neutral-base">
+                        Send end user notification emails for the following events:
+                      </h4>
+                      <div class="flex flex-col gap-3">
+                        <CheckboxWithLabel v-model="notifyRequestReceived" :binary="true">
+                          <template #label>Request Received Confirmation</template>
+                        </CheckboxWithLabel>
+                        <CheckboxWithLabel v-model="notifyApprovalDenial" :binary="true">
+                          <template #label>Request Approval/Denial</template>
+                        </CheckboxWithLabel>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="flex flex-col gap-4">
+                  <PageSection title="Approver Progress Indicator">
+                    <template #actions><span /></template>
+                  </PageSection>
+
+                  <div :class="settingCardClass">
+                    <SettingCardItem
+                      v-model:toggle-value="exposeApprovalProgress"
+                      title="Expose the Approval Progress to end users"
+                      :has-bottom-border="false"
+                    >
+                      <template #description>
+                        <span class="text-body-sm text-neutral-muted">
+                          When enabled, end users can see approval status in their portal.
+                        </span>
+                      </template>
+                    </SettingCardItem>
+                  </div>
+                </section>
+
+                <section class="flex flex-col gap-4">
+                  <PageSection title="Webhook Notifications">
+                    <template #subtitle>
+                      <span class="text-body-sm text-neutral-muted">
+                        Receive Access Request event notifications using your already configured webhook channels.
+                        <LinkText
+                          href="#"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          :showIcon="false"
+                          customClass="text-body-sm-link inline-flex items-center gap-1"
+                        >
+                          Learn More
+                          <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-current" aria-hidden="true" />
+                        </LinkText>
+                      </span>
+                    </template>
+                    <template #actions>
+                      <Button
+                        label="Select Channel"
+                        severity="secondary"
+                        variant="outlined"
+                        @click="openSelectChannelModal"
+                      />
+                    </template>
+                  </PageSection>
 
                   <div class="flex flex-col gap-sm">
                     <span class="text-body-md-semi-bold text-neutral-base">Webhook Channel</span>
                     <div
                       v-for="ch in settingsWebhookChannels"
                       :key="ch.id"
-                      class="flex flex-col overflow-hidden rounded-lg border border-neutral-default_solid"
+                      class="flex flex-col overflow-hidden rounded-lg border border-neutral-default_solid bg-neutral-base shadow-e100"
                     >
                       <div class="flex min-w-0 items-center gap-sm bg-neutral-surface px-md py-sm">
                         <button
@@ -331,9 +373,9 @@ const AccessRequestSettingsPage = defineComponent({
                       </div>
                     </div>
                   </div>
-                </div>
+                </section>
               </div>
-            </div>
+            </ConfigPageLayout>
           </div>
 
           <div

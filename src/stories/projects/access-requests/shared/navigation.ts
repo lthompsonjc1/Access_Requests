@@ -120,7 +120,8 @@ export const ACCESS_REQUESTS_SETTINGS_STORY_PATH =
 
 export function navigateToStorybookStory(storyPath: string) {
   const target = window.parent ?? window;
-  target.location.assign(`${target.location.pathname}${storyPath}`);
+  const normalizedPath = storyPath.startsWith('/') ? storyPath : `/${storyPath}`;
+  target.location.assign(`${target.location.origin}${normalizedPath}`);
 }
 
 export const profileMenuItems = [
