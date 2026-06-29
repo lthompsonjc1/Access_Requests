@@ -112,6 +112,17 @@ export const menuItems = [
   },
 ];
 
+export const ACCESS_REQUESTS_LIST_STORY_PATH =
+  '/?path=/story/projects-access-requests-pages-access-requests-list--default';
+
+export const ACCESS_REQUESTS_SETTINGS_STORY_PATH =
+  '/?path=/story/projects-access-requests-pages-access-request-settings--default';
+
+export function navigateToStorybookStory(storyPath: string) {
+  const target = window.parent ?? window;
+  target.location.assign(`${target.location.pathname}${storyPath}`);
+}
+
 export const profileMenuItems = [
   {
     label: 'Admin User',

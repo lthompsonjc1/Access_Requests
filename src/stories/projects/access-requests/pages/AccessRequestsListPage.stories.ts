@@ -12,22 +12,18 @@ import {
   LinkText,
   MessageNotification,
   ToggleSwitch,
-  CheckboxWithLabel,
 } from '@jumpcloud/circuit/components';
 import Menu from 'primevue/menu';
 import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
 import Button from 'primevue/button';
-import Checkbox from 'primevue/checkbox';
 import Dialog from 'primevue/dialog';
-import Divider from 'primevue/divider';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
 import {
   ArrowTopRightOnSquareIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   ClipboardDocumentCheckIcon,
   Cog6ToothIcon,
   EllipsisHorizontalIcon,
@@ -35,7 +31,6 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon,
   MagnifyingGlassIcon,
-  TrashIcon,
   XCircleIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline';
@@ -43,15 +38,12 @@ import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 import DetailsKeyValue from '@/components/DetailsKeyValue.vue';
 import TopBar from '@/components/TopBar.vue';
-import { menuItems, profileMenuItems } from '../shared/navigation';
 import {
-  WEBHOOK_ACCESS_EVENT_DEFINITIONS,
-  createDefaultSettingsWebhookChannels,
-  isWebhookChannelSelectAllChecked,
-  isWebhookChannelSelectAllIndeterminate,
-  setAllWebhookChannelEvents,
-  webhookChannelEventsTagLabel,
-} from '../shared/webhookChannelSettings';
+  ACCESS_REQUESTS_SETTINGS_STORY_PATH,
+  menuItems,
+  navigateToStorybookStory,
+  profileMenuItems,
+} from '../shared/navigation';
 
 // ─── Types ───
 
@@ -169,7 +161,6 @@ interface DeviceAdminSessionRow {
   timeRemainingLabel: string;
 }
 
-const TIMED_ACCESS_TOTAL_MOCK = 300;
 const PAGINATION_THRESHOLD = 10;
 
 function shouldShowTablePaginator(total: number): boolean {
@@ -181,45 +172,29 @@ function formatCompactPageReport(total: number): string {
   return `1-${total} of ${total}`;
 }
 
-function buildTimedAccessRows(): TimedAccessSessionRow[] {
-  const rows: TimedAccessSessionRow[] = [
-    {
-      id: 'ts-1',
-      user: 'Morgan Ellis',
-      approvalFlow: 'SalesForce Admins',
-      groupAssignment: 'SalesForce_Admins_Only',
-      timeRemainingLabel: '4h:23m',
-    },
-    {
-      id: 'ts-2',
-      user: 'Ravi Kumar',
-      approvalFlow: 'SalesForce Admins',
-      groupAssignment: 'SalesForce_Admins_Only',
-      timeRemainingLabel: '6d:23h:18m',
-    },
-    {
-      id: 'ts-3',
-      user: 'Casey Nguyen',
-      approvalFlow: 'SalesForce Admins',
-      groupAssignment: 'SalesForce_Admins_Only',
-      timeRemainingLabel: '2d:5h:12m',
-    },
-  ];
-  const users = ['Jordan Lee', 'Sam Patel', 'Taylor Brooks', 'Riley Chen', 'Devon White'];
-  const flows = ['SalesForce Admins', 'Confluence - Users', 'UX Tools', 'DEV Tools'];
-  const groups = ['SalesForce_Admins_Only', 'Confluence_For_Users', 'Design_Tools', 'Dev_Tools_Access'];
-  const times = ['4h:23m', '6d:23h:18m', '12h:30m', '1d:2h:0m', '3d:0h:45m'];
-  for (let i = rows.length; i < TIMED_ACCESS_TOTAL_MOCK; i++) {
-    rows.push({
-      id: `ts-${i + 1}`,
-      user: `${users[i % users.length]} (${i + 1})`,
-      approvalFlow: flows[i % flows.length],
-      groupAssignment: groups[i % groups.length],
-      timeRemainingLabel: times[i % times.length],
-    });
-  }
-  return rows;
-}
+const timedAccessSessionsData: TimedAccessSessionRow[] = [
+  {
+    id: 'ts-1',
+    user: 'Morgan Ellis',
+    approvalFlow: 'SalesForce Admins',
+    groupAssignment: 'SalesForce_Admins_Only',
+    timeRemainingLabel: '4h:23m',
+  },
+  {
+    id: 'ts-2',
+    user: 'Ravi Kumar',
+    approvalFlow: 'SalesForce Admins',
+    groupAssignment: 'SalesForce_Admins_Only',
+    timeRemainingLabel: '6d:23h:18m',
+  },
+  {
+    id: 'ts-3',
+    user: 'Casey Nguyen',
+    approvalFlow: 'SalesForce Admins',
+    groupAssignment: 'SalesForce_Admins_Only',
+    timeRemainingLabel: '2d:5h:12m',
+  },
+];
 
 const deviceAdminSessionsData: DeviceAdminSessionRow[] = [
   { id: 'da-1', user: 'Jamie Rivera', device: 'MacBook Pro #4421', os: 'macOS', timeRemainingLabel: '4h:23m' },
@@ -950,9 +925,6 @@ const AccessRequestsListPage = defineComponent({
     DetailsKeyValue,
     LinkText,
     MessageNotification,
-    Checkbox,
-    CheckboxWithLabel,
-    Divider,
     Dialog,
     IconField,
     InputIcon,
@@ -960,7 +932,6 @@ const AccessRequestsListPage = defineComponent({
     ArrowTopRightOnSquareIcon,
     CheckCircleIcon,
     ChevronDownIcon,
-    ChevronUpIcon,
     ClipboardDocumentCheckIcon,
     Cog6ToothIcon,
     Menu,
@@ -968,7 +939,6 @@ const AccessRequestsListPage = defineComponent({
     ExclamationTriangleIcon,
     InformationCircleIcon,
     MagnifyingGlassIcon,
-    TrashIcon,
     XCircleIcon,
     XMarkIcon,
   },
@@ -980,9 +950,8 @@ const AccessRequestsListPage = defineComponent({
     const activeMainTab = ref(props.initialMainTab);
     const activeSubTab = ref(props.initialSubTab);
     const activeSessionsSubTab = ref(props.initialActiveSessionsSubTab);
-    const showSettings = ref(false);
 
-    const timedAccessRows = ref<TimedAccessSessionRow[]>(buildTimedAccessRows());
+    const timedAccessRows = ref<TimedAccessSessionRow[]>([...timedAccessSessionsData]);
     const timedAccessSelection = ref<TimedAccessSessionRow[]>([]);
     const deviceAdminRows = ref<DeviceAdminSessionRow[]>(deviceAdminSessionsData.map((r) => ({ ...r })));
     const deviceAdminSelection = ref<DeviceAdminSessionRow[]>([]);
@@ -1003,18 +972,6 @@ const AccessRequestsListPage = defineComponent({
     function handleActiveSessionsSearch(_query: string) {
       // Story placeholder
     }
-
-    const accessRequestsOn = ref(true);
-    const notifyViaEmail = ref(true);
-    const notifyRequestReceived = ref(true);
-    const notifyApprovalDenial = ref(true);
-    const exposeApprovalProgress = ref(true);
-    const settingsWebhookChannels = ref(createDefaultSettingsWebhookChannels());
-    const showSelectChannelModal = ref(false);
-    const selectChannelSearch = ref('');
-    const selectChannelSelectedCount = ref(0);
-    const showRemoveWebhookChannelDialog = ref(false);
-    const webhookChannelIdPendingRemoval = ref<string | null>(null);
 
     const approvalFlowsData = ref<ApprovalFlowRow[]>(
       initialApprovalFlows.map((r) => ({
@@ -1416,52 +1373,15 @@ const AccessRequestsListPage = defineComponent({
       // Placeholder
     }
 
-    function openSettings() {
-      showSettings.value = true;
-    }
-
-    function closeSettings() {
-      showSettings.value = false;
-    }
-
-    function removeSettingsWebhookChannel(id: string) {
-      settingsWebhookChannels.value = settingsWebhookChannels.value.filter((c) => c.id !== id);
-    }
-
-    function openRemoveWebhookChannelDialog(id: string) {
-      webhookChannelIdPendingRemoval.value = id;
-      showRemoveWebhookChannelDialog.value = true;
-    }
-
-    function closeRemoveWebhookChannelDialog() {
-      showRemoveWebhookChannelDialog.value = false;
-    }
-
-    function confirmRemoveWebhookChannel() {
-      const id = webhookChannelIdPendingRemoval.value;
-      if (id) removeSettingsWebhookChannel(id);
-      showRemoveWebhookChannelDialog.value = false;
-    }
-
-    watch(showRemoveWebhookChannelDialog, (open) => {
-      if (!open) webhookChannelIdPendingRemoval.value = null;
-    });
-
-    function openSelectChannelModal() {
-      showSelectChannelModal.value = true;
-    }
-
-    function closeSelectChannelModal() {
-      showSelectChannelModal.value = false;
-      selectChannelSearch.value = '';
-    }
-
-    function handleSelectChannelAdd() {
-      showSelectChannelModal.value = false;
-      selectChannelSearch.value = '';
+    function navigateToSettings() {
+      navigateToStorybookStory(ACCESS_REQUESTS_SETTINGS_STORY_PATH);
     }
 
     /** Full-bleed table: avoid intrinsic table width + horizontal centering on wide viewports */
+    const listPageTableSectionClass =
+      'flex min-h-0 min-w-0 w-full flex-1 flex-col px-2';
+    const listPageTableCardClass =
+      'flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md border border-neutral-default_solid bg-neutral-base shadow-e100';
     const listPageDataTablePt = {
       root: {
         class: 'min-w-0 w-full max-w-none self-stretch',
@@ -1484,9 +1404,14 @@ const AccessRequestsListPage = defineComponent({
       virtualScroller: {
         root: { class: 'min-h-0 min-w-0 w-full max-w-none flex-1' },
       },
+      footer: {
+        class: 'pl-4 pr-4',
+      },
     };
 
     return {
+      listPageTableSectionClass,
+      listPageTableCardClass,
       listPageDataTablePt,
       menuItems,
       profileMenuItems,
@@ -1553,33 +1478,10 @@ const AccessRequestsListPage = defineComponent({
       toggleDraftFlowType,
       toggleDraftFlowApprovalMode,
       toggleDraftFlowStatus,
-      showSettings,
-      openSettings,
-      closeSettings,
-      accessRequestsOn,
-      notifyViaEmail,
-      notifyRequestReceived,
-      notifyApprovalDenial,
-      exposeApprovalProgress,
-      settingsWebhookChannels,
-      webhookAccessEvents: WEBHOOK_ACCESS_EVENT_DEFINITIONS,
-      webhookChannelEventsTagLabel,
-      isWebhookChannelSelectAllChecked,
-      isWebhookChannelSelectAllIndeterminate,
-      setAllWebhookChannelEvents,
-      openRemoveWebhookChannelDialog,
-      closeRemoveWebhookChannelDialog,
-      confirmRemoveWebhookChannel,
-      showRemoveWebhookChannelDialog,
+      navigateToSettings,
       showDisableApprovalFlowDialog,
       closeDisableApprovalFlowDialog,
       confirmDisableApprovalFlow,
-      showSelectChannelModal,
-      selectChannelSearch,
-      selectChannelSelectedCount,
-      openSelectChannelModal,
-      closeSelectChannelModal,
-      handleSelectChannelAdd,
     };
   },
   template: `
@@ -1596,7 +1498,6 @@ const AccessRequestsListPage = defineComponent({
         <TopBar />
         <div class="flex min-h-0 h-full w-full min-w-0 flex-[1_1_0] flex-col">
         <PageHeader
-          v-if="!showSettings"
           class="shrink-0"
           title="Access Requests"
           :tabs="mainTabs"
@@ -1607,21 +1508,15 @@ const AccessRequestsListPage = defineComponent({
             <ClipboardDocumentCheckIcon class="size-7" />
           </template>
           <template #actions>
-            <Button label="Settings" severity="secondary" variant="outlined" @click="openSettings">
+            <Button label="Settings" severity="secondary" variant="outlined" @click="navigateToSettings">
               <template #icon>
                 <Cog6ToothIcon class="size-5" />
               </template>
             </Button>
           </template>
         </PageHeader>
-        <PageHeader v-else class="shrink-0" title="Access Requests">
-          <template #icon>
-            <ClipboardDocumentCheckIcon class="size-7" />
-          </template>
-        </PageHeader>
 
-        <template v-if="!showSettings">
-        <div v-if="activeMainTab === 'request-queue'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-hidden bg-neutral-surface px-6 pb-6">
+        <div v-if="activeMainTab === 'request-queue'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-y-auto bg-neutral-surface px-6 pb-6">
           <!-- Sub-tabs: Administrator / Others (matches Device Detail pattern) -->
           <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
             <SelectButton
@@ -1657,7 +1552,8 @@ const AccessRequestsListPage = defineComponent({
             </DataTableToolbar>
           </div>
 
-          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
+          <div :class="listPageTableSectionClass">
+            <div :class="listPageTableCardClass">
             <CircuitDataTable
               class="min-h-0 min-w-0 w-full flex-1"
               :data="currentPageData"
@@ -1849,9 +1745,10 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </template>
             </CircuitDataTable>
+            </div>
             <p
               v-if="!showRequestQueuePaginator && totalRecords > 0"
-              class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+              class="shrink-0 pt-3 pl-2 text-left text-body-sm text-neutral-subtle"
             >
               {{ formatCompactPageReport(totalRecords) }}
             </p>
@@ -1866,7 +1763,7 @@ const AccessRequestsListPage = defineComponent({
           />
         </div>
 
-        <div v-if="activeMainTab === 'active-sessions'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-hidden bg-neutral-surface px-6 pb-6">
+        <div v-else-if="activeMainTab === 'active-sessions'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-y-auto bg-neutral-surface px-6 pb-6">
           <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
             <SelectButton
               v-model="activeSessionsSubTab"
@@ -1913,7 +1810,8 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </div>
 
-            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
+            <div :class="listPageTableSectionClass">
+              <div :class="listPageTableCardClass">
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
                 :data="timedAccessRows"
@@ -1951,9 +1849,10 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                 </template>
               </CircuitDataTable>
+              </div>
               <p
                 v-if="!showTimedAccessPaginator && timedAccessRows.length > 0"
-                class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+                class="shrink-0 pt-3 pl-2 text-left text-body-sm text-neutral-subtle"
               >
                 {{ formatCompactPageReport(timedAccessRows.length) }}
               </p>
@@ -1997,7 +1896,8 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </div>
 
-            <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
+            <div :class="listPageTableSectionClass">
+              <div :class="listPageTableCardClass">
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
                 :data="deviceAdminRows"
@@ -2033,9 +1933,10 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                 </template>
               </CircuitDataTable>
+              </div>
               <p
                 v-if="!showDeviceAdminPaginator && deviceAdminRows.length > 0"
-                class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+                class="shrink-0 pt-3 pl-2 text-left text-body-sm text-neutral-subtle"
               >
                 {{ formatCompactPageReport(deviceAdminRows.length) }}
               </p>
@@ -2045,7 +1946,7 @@ const AccessRequestsListPage = defineComponent({
           <Menu ref="activeSessionsActionsMenuRef" :model="activeSessionsActionsMenuItems" :popup="true" />
         </div>
 
-        <div v-if="activeMainTab === 'approval-flows'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-hidden bg-neutral-surface px-6 pb-6">
+        <div v-else-if="activeMainTab === 'approval-flows'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-y-auto bg-neutral-surface px-6 pb-6">
           <div class="shrink-0 w-full min-w-0 pt-6 pb-4">
             <DataTableToolbar
               add-button-label="Add Approval Flow"
@@ -2066,7 +1967,8 @@ const AccessRequestsListPage = defineComponent({
             />
           </div>
 
-          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-neutral-base shadow-e100">
+          <div :class="listPageTableSectionClass">
+            <div :class="listPageTableCardClass">
             <CircuitDataTable
               class="min-h-0 min-w-0 w-full flex-1"
               :data="filteredApprovalFlows"
@@ -2155,193 +2057,15 @@ const AccessRequestsListPage = defineComponent({
               </div>
             </template>
             </CircuitDataTable>
+            </div>
             <p
               v-if="!showApprovalFlowsPaginator && approvalFlowsTotalRecords > 0"
-              class="shrink-0 py-3 pl-4 text-left text-body-sm text-neutral-subtle"
+              class="shrink-0 pt-3 pl-2 text-left text-body-sm text-neutral-subtle"
             >
               {{ formatCompactPageReport(approvalFlowsTotalRecords) }}
             </p>
           </div>
         </div>
-
-        </template>
-
-        <template v-else>
-          <div class="flex min-h-0 min-w-0 w-full flex-1 flex-col">
-          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-neutral-surface">
-            <div class="flex w-full min-w-0 flex-col gap-6 px-6 py-6">
-              <div
-                class="flex max-w-[1024px] flex-col gap-6 rounded-lg border border-neutral-default_solid bg-neutral-base p-md"
-              >
-                <div class="flex flex-col gap-2">
-                  <h2 class="text-heading-3 text-neutral-base">Access Request Settings</h2>
-                  <p class="text-body-md text-neutral-base">
-                    Configure Resource Access settings for your organization.
-                    <span class="inline-flex items-center gap-0.5 align-middle">
-                      <LinkText label="Learn More" href="#" class="text-body-md" />
-                      <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-info-base" aria-hidden="true" />
-                    </span>
-                  </p>
-                </div>
-
-                <Divider />
-
-                <div class="flex items-start gap-md">
-                  <ToggleSwitch v-model="accessRequestsOn" aria-label="Access requests enabled" />
-                  <div class="flex min-w-0 flex-col gap-1">
-                    <span class="text-body-md-semi-bold text-neutral-base">Access Requests On</span>
-                    <p class="text-body-sm text-neutral-subtle">
-                      Enabling this feature will allow end users to request access to resources from their user portal.
-                    </p>
-                  </div>
-                </div>
-
-                <Divider />
-
-                <div class="flex flex-col gap-4">
-                  <h3 class="text-heading-4 text-neutral-base">Notifications</h3>
-                  <div class="flex flex-col gap-3">
-                    <span class="text-body-md text-neutral-base">Receive Access Request Notifications via:</span>
-                    <CheckboxWithLabel v-model="notifyViaEmail" :binary="true">
-                      <template #label>Email</template>
-                    </CheckboxWithLabel>
-                  </div>
-                  <div class="flex flex-col gap-3">
-                    <span class="text-body-md text-neutral-base">
-                      Send end user notification emails for the following events:
-                    </span>
-                    <CheckboxWithLabel v-model="notifyRequestReceived" :binary="true">
-                      <template #label>Request Received Confirmation</template>
-                    </CheckboxWithLabel>
-                    <CheckboxWithLabel v-model="notifyApprovalDenial" :binary="true">
-                      <template #label>Request Approval/Denial</template>
-                    </CheckboxWithLabel>
-                  </div>
-                </div>
-
-                <Divider />
-
-                <div class="flex flex-col gap-3">
-                  <h3 class="text-heading-4 text-neutral-base">Approver Progress Indicator</h3>
-                  <CheckboxWithLabel v-model="exposeApprovalProgress" :binary="true">
-                    <template #label>
-                      <span class="inline-flex items-center gap-sm">
-                        <span>Expose the Approval Progress to end users</span>
-                        <InformationCircleIcon
-                          v-tooltip.top="'When enabled, end users can see approval status in their portal.'"
-                          class="size-4 shrink-0 text-neutral-subtle"
-                          aria-hidden="true"
-                        />
-                      </span>
-                    </template>
-                  </CheckboxWithLabel>
-                </div>
-
-                <Divider />
-
-                <div class="flex flex-col gap-4">
-                  <h3 class="text-heading-4 text-neutral-base">Webhook Notifications</h3>
-                  <p class="text-body-md text-neutral-base">
-                    Receive Access Request event notifications using your already configured webhook channels.
-                    <span class="inline-flex items-center gap-0.5 align-middle">
-                      <LinkText label="Learn More" href="#" class="text-body-md" />
-                      <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-info-base" aria-hidden="true" />
-                    </span>
-                  </p>
-                  <Button
-                    label="Select Channel"
-                    severity="secondary"
-                    variant="outlined"
-                    class="w-fit shrink-0 self-start"
-                    @click="openSelectChannelModal"
-                  />
-
-                  <div class="flex flex-col gap-sm">
-                    <span class="text-body-md-semi-bold text-neutral-base">Webhook Channel</span>
-                    <div
-                      v-for="ch in settingsWebhookChannels"
-                      :key="ch.id"
-                      class="flex flex-col overflow-hidden rounded-lg border border-neutral-default_solid"
-                    >
-                      <div class="flex min-w-0 items-center gap-sm bg-neutral-surface px-md py-sm">
-                        <button
-                          type="button"
-                          class="flex shrink-0 rounded p-1 text-neutral-subtle transition-colors hover:bg-neutral-surface_raised hover:text-neutral-base"
-                          :aria-expanded="ch.expanded"
-                          :aria-label="ch.expanded ? 'Collapse ' + ch.name : 'Expand ' + ch.name"
-                          @click="ch.expanded = !ch.expanded"
-                        >
-                          <ChevronUpIcon v-if="ch.expanded" class="size-4" aria-hidden="true" />
-                          <ChevronDownIcon v-else class="size-4" aria-hidden="true" />
-                        </button>
-                        <span class="min-w-0 flex-1 truncate text-body-md text-neutral-base">{{ ch.name }}</span>
-                        <Tag
-                          :value="webhookChannelEventsTagLabel(ch.eventSelection)"
-                          severity="secondary"
-                          class="shrink-0"
-                        />
-                        <Button
-                          severity="secondary"
-                          variant="text"
-                          size="small"
-                          :aria-label="'Remove ' + ch.name"
-                          @click="openRemoveWebhookChannelDialog(ch.id)"
-                        >
-                          <template #icon>
-                            <TrashIcon class="size-4" />
-                          </template>
-                        </Button>
-                      </div>
-                      <div
-                        v-if="ch.expanded"
-                        class="flex flex-col gap-md border-t border-neutral-default_solid px-md py-md"
-                      >
-                        <div class="flex items-start gap-sm">
-                          <Checkbox
-                            :binary="true"
-                            :inputId="'webhook-select-all-' + ch.id"
-                            :modelValue="isWebhookChannelSelectAllChecked(ch)"
-                            :indeterminate="isWebhookChannelSelectAllIndeterminate(ch)"
-                            @update:modelValue="setAllWebhookChannelEvents(ch, $event)"
-                          />
-                          <label
-                            class="cursor-pointer text-body-md text-neutral-base pt-0.5"
-                            :for="'webhook-select-all-' + ch.id"
-                          >
-                            Select All
-                          </label>
-                        </div>
-                        <div class="flex flex-col gap-md border-l border-neutral-default_solid pl-md ml-sm">
-                          <CheckboxWithLabel
-                            v-for="ev in webhookAccessEvents"
-                            :key="ev.id"
-                            v-model="ch.eventSelection[ev.id]"
-                            :binary="true"
-                            :inputId="'webhook-ev-' + ch.id + '-' + ev.id"
-                          >
-                            <template #label>
-                              <span class="text-body-md-semi-bold text-neutral-base">{{ ev.key }}</span>
-                            </template>
-                            <template #description>
-                              <span class="text-body-sm text-neutral-subtle">{{ ev.description }}</span>
-                            </template>
-                          </CheckboxWithLabel>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div
-            class="flex shrink-0 items-center justify-end gap-sm border-t border-neutral-default_solid bg-neutral-base px-6 py-3"
-          >
-            <Button label="Cancel" severity="secondary" variant="outlined" @click="closeSettings" />
-            <Button label="Save" severity="secondary" disabled />
-          </div>
-          </div>
-        </template>
 
         </div>
       </div>
@@ -2485,80 +2209,6 @@ const AccessRequestsListPage = defineComponent({
               :disabled="approvalFlowFilterApplyDisabled"
               @click="applyApprovalFlowFilters"
             />
-          </div>
-        </template>
-      </Dialog>
-
-      <Dialog
-        v-model:visible="showSelectChannelModal"
-        :draggable="false"
-        modal
-        header="Select Channel"
-        :style="{ width: '560px' }"
-      >
-        <template #closeicon><XMarkIcon /></template>
-        <div class="flex flex-col gap-md">
-          <span class="text-body-md text-neutral-base">
-            Select Webhook Channels ({{ selectChannelSelectedCount }})
-          </span>
-          <FormField label="Search channels">
-            <template #default="{ inputId }">
-              <IconField>
-                <InputIcon>
-                  <MagnifyingGlassIcon />
-                </InputIcon>
-                <InputText
-                  :id="inputId"
-                  v-model="selectChannelSearch"
-                  placeholder="Search channels..."
-                  class="w-full"
-                />
-              </IconField>
-            </template>
-          </FormField>
-          <div
-            class="flex min-h-60 flex-col rounded-md border border-neutral-default_solid bg-neutral-base"
-          />
-        </div>
-        <template #footer>
-          <div class="flex items-center flex-1 min-w-0" />
-          <div class="flex gap-sm shrink-0">
-            <Button
-              label="Cancel"
-              severity="secondary"
-              variant="outlined"
-              @click="closeSelectChannelModal"
-            />
-            <Button
-              label="Add"
-              :disabled="selectChannelSelectedCount === 0"
-              @click="handleSelectChannelAdd"
-            />
-          </div>
-        </template>
-      </Dialog>
-
-      <Dialog
-        v-model:visible="showRemoveWebhookChannelDialog"
-        :draggable="false"
-        modal
-        header="Remove Webhook Channel"
-        :style="{ width: '480px' }"
-      >
-        <template #closeicon><XMarkIcon /></template>
-        <p class="text-body-md text-neutral-subtle">
-          Removing this webhook channel from Access Requests will end notifications for all selected events.
-        </p>
-        <template #footer>
-          <div class="flex items-center flex-1 min-w-0" />
-          <div class="flex gap-sm shrink-0">
-            <Button
-              label="Cancel"
-              severity="secondary"
-              variant="outlined"
-              @click="closeRemoveWebhookChannelDialog"
-            />
-            <Button label="Remove" severity="danger" variant="outlined" @click="confirmRemoveWebhookChannel" />
           </div>
         </template>
       </Dialog>
