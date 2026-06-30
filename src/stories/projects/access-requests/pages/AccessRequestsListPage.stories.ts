@@ -21,6 +21,8 @@ import Dialog from 'primevue/dialog';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
+import Textarea from 'primevue/textarea';
 import {
   ArrowTopRightOnSquareIcon,
   ChevronDownIcon,
@@ -36,7 +38,6 @@ import {
 } from '@heroicons/vue/24/outline';
 import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
-import DetailsKeyValue from '@/components/DetailsKeyValue.vue';
 import TopBar from '@/components/TopBar.vue';
 import {
   ACCESS_REQUESTS_SETTINGS_STORY_PATH,
@@ -163,6 +164,26 @@ interface DeviceAdminSessionRow {
 
 const PAGINATION_THRESHOLD = 10;
 
+const grantAccessDurationOptions = [
+  { label: '30 Days', value: 30 },
+  { label: '60 Days', value: 60 },
+  { label: '90 Days', value: 90 },
+  { label: '365 Days', value: 365 },
+];
+
+function parseDurationDays(duration: string | undefined): number {
+  const match = duration?.match(/(\d+)/);
+  if (!match) return 90;
+  const days = Number(match[1]);
+  return grantAccessDurationOptions.some((opt) => opt.value === days) ? days : 90;
+}
+
+function formatGrantAccessExpiration(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
 function shouldShowTablePaginator(total: number): boolean {
   return total >= PAGINATION_THRESHOLD;
 }
@@ -175,7 +196,7 @@ function formatCompactPageReport(total: number): string {
 const timedAccessSessionsData: TimedAccessSessionRow[] = [
   {
     id: 'ts-1',
-    user: 'Morgan Ellis',
+    user: 'Lorie Thompson (Manager)',
     approvalFlow: 'SalesForce Admins',
     groupAssignment: 'SalesForce_Admins_Only',
     timeRemainingLabel: '4h:23m',
@@ -292,6 +313,8 @@ const ActionsCell = defineComponent({
   props: {
     status: { type: String, required: true },
     requestId: { type: Number, required: true },
+    onGrantAccess: { type: Function, default: undefined },
+    onDenyAccess: { type: Function, default: undefined },
   },
   setup(props) {
     const menuRef = ref<InstanceType<typeof Menu> | null>(null);
@@ -300,8 +323,14 @@ const ActionsCell = defineComponent({
     );
 
     const menuItems = computed(() => [
-      { label: 'Grant Access', command: () => {} },
-      { label: 'Deny Access', command: () => {} },
+      {
+        label: 'Grant Access',
+        command: () => props.onGrantAccess?.(props.requestId),
+      },
+      {
+        label: 'Deny Access',
+        command: () => props.onDenyAccess?.(props.requestId),
+      },
     ]);
 
     function toggleMenu(event: Event) {
@@ -387,10 +416,18 @@ const ActiveSessionRevokeCell = defineComponent({
   components: { Button },
   props: {
     sessionId: { type: String, required: true },
+    onRevoke: { type: Function, default: undefined },
   },
   template: `
     <div class="flex items-center p-2 min-h-12">
-      <Button label="Revoke" severity="danger" variant="outlined" size="small" :aria-label="'Revoke session ' + sessionId" />
+      <Button
+        label="Revoke"
+        severity="danger"
+        variant="outlined"
+        size="small"
+        :aria-label="'Revoke session ' + sessionId"
+        @click="onRevoke?.(sessionId)"
+      />
     </div>
   `,
 });
@@ -922,13 +959,14 @@ const AccessRequestsListPage = defineComponent({
     SelectButton,
     Button,
     ToggleSwitch,
-    DetailsKeyValue,
     LinkText,
     MessageNotification,
     Dialog,
     IconField,
     InputIcon,
     InputText,
+    Select,
+    Textarea,
     ArrowTopRightOnSquareIcon,
     CheckCircleIcon,
     ChevronDownIcon,
@@ -956,10 +994,6 @@ const AccessRequestsListPage = defineComponent({
     const deviceAdminRows = ref<DeviceAdminSessionRow[]>(deviceAdminSessionsData.map((r) => ({ ...r })));
     const deviceAdminSelection = ref<DeviceAdminSessionRow[]>([]);
     const activeSessionsActionsMenuRef = ref<InstanceType<typeof Menu> | null>(null);
-    const activeSessionsActionsMenuItems = ref([
-      { label: 'Revoke selected', command: () => {} },
-      { label: 'Export list', command: () => {} },
-    ]);
 
     function toggleActiveSessionsActionsMenu(event: Event) {
       activeSessionsActionsMenuRef.value?.toggle(event);
@@ -1022,6 +1056,234 @@ const AccessRequestsListPage = defineComponent({
 
     watch(showDisableApprovalFlowDialog, (open) => {
       if (!open) disableApprovalFlowIdPending.value = null;
+    });
+
+    const showGrantAccessDialog = ref(false);
+    const showDenyAccessDialog = ref(false);
+    const accessActionRequestIdPending = ref<number | null>(null);
+    const grantAccessDuration = ref(90);
+    const grantAccessMessage = ref('');
+    const denyAccessReason = ref('');
+    const denyAccessInternalNotes = ref('');
+
+    const denyAccessConfirmDisabled = computed(() => !denyAccessReason.value.trim());
+
+    const grantAccessExpirationLabel = computed(() =>
+      formatGrantAccessExpiration(grantAccessDuration.value),
+    );
+
+    const pendingAccessRequest = computed(() => {
+      const id = accessActionRequestIdPending.value;
+      if (id == null) return null;
+      return sourceData.value.find((r) => r.id === id) ?? null;
+    });
+
+    const grantAccessResourceName = computed(() => {
+      const request = pendingAccessRequest.value;
+      if (!request) return '';
+      return request.approvalTitle || request.name;
+    });
+
+    function updateRequestStatus(requestId: number, status: 'Approved' | 'Denied') {
+      const applyUpdate = (row: AccessRequest) => {
+        row.status = status;
+        row.approvalProgressStatus = status === 'Approved' ? 'Approved' : 'Denied';
+      };
+
+      const administratorRow = requests.value.find((r) => r.id === requestId);
+      if (administratorRow) applyUpdate(administratorRow);
+
+      const othersRow = othersRequestsData.find((r) => r.id === requestId);
+      if (othersRow) applyUpdate(othersRow);
+    }
+
+    function openGrantAccessDialog(requestId: number) {
+      accessActionRequestIdPending.value = requestId;
+      grantAccessMessage.value = '';
+      const request =
+        requests.value.find((r) => r.id === requestId) ??
+        othersRequestsData.find((r) => r.id === requestId);
+      grantAccessDuration.value = parseDurationDays(request?.duration);
+      showGrantAccessDialog.value = true;
+    }
+
+    function openDenyAccessDialog(requestId: number) {
+      accessActionRequestIdPending.value = requestId;
+      denyAccessReason.value = '';
+      denyAccessInternalNotes.value = '';
+      showDenyAccessDialog.value = true;
+    }
+
+    function closeGrantAccessDialog() {
+      showGrantAccessDialog.value = false;
+    }
+
+    function closeDenyAccessDialog() {
+      showDenyAccessDialog.value = false;
+    }
+
+    function confirmGrantAccess() {
+      const id = accessActionRequestIdPending.value;
+      if (id != null) updateRequestStatus(id, 'Approved');
+      grantAccessMessage.value = '';
+      showGrantAccessDialog.value = false;
+    }
+
+    function confirmDenyAccess() {
+      const id = accessActionRequestIdPending.value;
+      if (id != null && denyAccessReason.value.trim()) updateRequestStatus(id, 'Denied');
+      denyAccessReason.value = '';
+      denyAccessInternalNotes.value = '';
+      showDenyAccessDialog.value = false;
+    }
+
+    watch([showGrantAccessDialog, showDenyAccessDialog], ([grantOpen, denyOpen]) => {
+      if (!grantOpen && !denyOpen) accessActionRequestIdPending.value = null;
+    });
+
+    const showRevokeTimedAccessDialog = ref(false);
+    const revokeTimedAccessSessionIdPending = ref<string | null>(null);
+
+    const pendingRevokeTimedAccessSession = computed(() => {
+      const id = revokeTimedAccessSessionIdPending.value;
+      if (!id) return null;
+      return timedAccessRows.value.find((row) => row.id === id) ?? null;
+    });
+
+    const timedAccessColumnsWithActions = computed(() =>
+      timedAccessColumns.map((column) => {
+        if (column.field !== 'actions') return column;
+
+        return {
+          ...column,
+          componentProps: (sp: { data: Record<string, unknown> }) => ({
+            sessionId: sp.data.id as string,
+            onRevoke: openRevokeTimedAccessDialog,
+          }),
+        };
+      }),
+    );
+
+    function openRevokeTimedAccessDialog(sessionId: string) {
+      revokeTimedAccessSessionIdPending.value = sessionId;
+      showRevokeTimedAccessDialog.value = true;
+    }
+
+    function closeRevokeTimedAccessDialog() {
+      showRevokeTimedAccessDialog.value = false;
+    }
+
+    function confirmRevokeTimedAccess() {
+      const id = revokeTimedAccessSessionIdPending.value;
+      if (id) {
+        timedAccessRows.value = timedAccessRows.value.filter((row) => row.id !== id);
+      }
+      showRevokeTimedAccessDialog.value = false;
+    }
+
+    watch(showRevokeTimedAccessDialog, (open) => {
+      if (!open) revokeTimedAccessSessionIdPending.value = null;
+    });
+
+    const showRevokeDeviceAdminDialog = ref(false);
+    const revokeDeviceAdminBulkMode = ref(false);
+    const revokeDeviceAdminSessionIdPending = ref<string | null>(null);
+    const revokeDeviceAdminPendingIds = ref<string[]>([]);
+
+    const pendingRevokeDeviceAdminSession = computed(() => {
+      const id = revokeDeviceAdminSessionIdPending.value;
+      if (!id) return null;
+      return deviceAdminRows.value.find((row) => row.id === id) ?? null;
+    });
+
+    const pendingRevokeDeviceAdminSessions = computed(() =>
+      deviceAdminRows.value.filter((row) => revokeDeviceAdminPendingIds.value.includes(row.id)),
+    );
+
+    const revokeDeviceAdminSelectedUserCount = computed(
+      () => new Set(pendingRevokeDeviceAdminSessions.value.map((row) => row.user)).size,
+    );
+
+    const deviceAdminColumnsWithActions = computed(() =>
+      deviceAdminSessionColumns.map((column) => {
+        if (column.field !== 'actions') return column;
+
+        return {
+          ...column,
+          componentProps: (sp: { data: Record<string, unknown> }) => ({
+            sessionId: sp.data.id as string,
+            onRevoke: openRevokeDeviceAdminDialog,
+          }),
+        };
+      }),
+    );
+
+    function openRevokeDeviceAdminDialog(sessionId: string) {
+      revokeDeviceAdminBulkMode.value = false;
+      revokeDeviceAdminSessionIdPending.value = sessionId;
+      revokeDeviceAdminPendingIds.value = [sessionId];
+      showRevokeDeviceAdminDialog.value = true;
+    }
+
+    function openRevokeDeviceAdminBulkDialog() {
+      revokeDeviceAdminBulkMode.value = true;
+      revokeDeviceAdminSessionIdPending.value = null;
+      revokeDeviceAdminPendingIds.value = deviceAdminSelection.value.map((row) => row.id);
+      showRevokeDeviceAdminDialog.value = true;
+    }
+
+    function closeRevokeDeviceAdminDialog() {
+      showRevokeDeviceAdminDialog.value = false;
+    }
+
+    function confirmRevokeDeviceAdmin() {
+      const idsToRemove = revokeDeviceAdminBulkMode.value
+        ? revokeDeviceAdminPendingIds.value
+        : revokeDeviceAdminSessionIdPending.value
+          ? [revokeDeviceAdminSessionIdPending.value]
+          : [];
+
+      if (idsToRemove.length) {
+        const idSet = new Set(idsToRemove);
+        deviceAdminRows.value = deviceAdminRows.value.filter((row) => !idSet.has(row.id));
+        deviceAdminSelection.value = deviceAdminSelection.value.filter((row) => !idSet.has(row.id));
+      }
+      showRevokeDeviceAdminDialog.value = false;
+    }
+
+    watch(showRevokeDeviceAdminDialog, (open) => {
+      if (!open) {
+        revokeDeviceAdminBulkMode.value = false;
+        revokeDeviceAdminSessionIdPending.value = null;
+        revokeDeviceAdminPendingIds.value = [];
+      }
+    });
+
+    const activeSessionsActionsMenuItems = computed(() => {
+      const singleTimedAccessSelected = timedAccessSelection.value.length === 1;
+      const deviceAdminSelectedCount = deviceAdminSelection.value.length;
+
+      return [
+        {
+          label: 'Revoke selected',
+          disabled:
+            activeSessionsSubTab.value === 'timed-access'
+              ? !singleTimedAccessSelected
+              : activeSessionsSubTab.value === 'device-admin'
+                ? deviceAdminSelectedCount === 0
+                : true,
+          command: () => {
+            if (activeSessionsSubTab.value === 'timed-access' && singleTimedAccessSelected) {
+              openRevokeTimedAccessDialog(timedAccessSelection.value[0].id);
+            } else if (activeSessionsSubTab.value === 'device-admin' && deviceAdminSelectedCount === 1) {
+              openRevokeDeviceAdminDialog(deviceAdminSelection.value[0].id);
+            } else if (activeSessionsSubTab.value === 'device-admin' && deviceAdminSelectedCount > 1) {
+              openRevokeDeviceAdminBulkDialog();
+            }
+          },
+        },
+        { label: 'Export list', command: () => {} },
+      ];
     });
 
     const approvalFlowColumns = [
@@ -1217,11 +1479,24 @@ const AccessRequestsListPage = defineComponent({
       activeSubTab.value === 'others' ? othersRequestsData : requests.value,
     );
 
-    const columns = computed(() =>
-      activeSubTab.value === 'others'
-        ? requestQueueOthersColumns
-        : requestQueueAdministratorColumns,
-    );
+    const columns = computed(() => {
+      const baseColumns =
+        activeSubTab.value === 'others' ? requestQueueOthersColumns : requestQueueAdministratorColumns;
+
+      return baseColumns.map((column) => {
+        if (column.field !== 'actions') return column;
+
+        return {
+          ...column,
+          componentProps: (sp: { data: Record<string, unknown> }) => ({
+            status: sp.data.status as string,
+            requestId: sp.data.id as number,
+            onGrantAccess: openGrantAccessDialog,
+            onDenyAccess: openDenyAccessDialog,
+          }),
+        };
+      });
+    });
 
     const currentPageData = computed(() => {
       const filters = appliedFilters.value;
@@ -1434,10 +1709,10 @@ const AccessRequestsListPage = defineComponent({
       activeSessionsSubTab,
       activeSessionsSubTabOptions,
       timedAccessRows,
-      timedAccessColumns,
+      timedAccessColumnsWithActions,
       timedAccessSelection,
       deviceAdminRows,
-      deviceAdminSessionColumns,
+      deviceAdminColumnsWithActions,
       deviceAdminSelection,
       activeSessionsActionsMenuRef,
       activeSessionsActionsMenuItems,
@@ -1482,6 +1757,33 @@ const AccessRequestsListPage = defineComponent({
       showDisableApprovalFlowDialog,
       closeDisableApprovalFlowDialog,
       confirmDisableApprovalFlow,
+      showGrantAccessDialog,
+      showDenyAccessDialog,
+      pendingAccessRequest,
+      grantAccessDurationOptions,
+      grantAccessDuration,
+      grantAccessMessage,
+      grantAccessExpirationLabel,
+      grantAccessResourceName,
+      denyAccessReason,
+      denyAccessInternalNotes,
+      denyAccessConfirmDisabled,
+      openGrantAccessDialog,
+      openDenyAccessDialog,
+      closeGrantAccessDialog,
+      closeDenyAccessDialog,
+      confirmGrantAccess,
+      confirmDenyAccess,
+      showRevokeTimedAccessDialog,
+      pendingRevokeTimedAccessSession,
+      closeRevokeTimedAccessDialog,
+      confirmRevokeTimedAccess,
+      showRevokeDeviceAdminDialog,
+      revokeDeviceAdminBulkMode,
+      pendingRevokeDeviceAdminSession,
+      revokeDeviceAdminSelectedUserCount,
+      closeRevokeDeviceAdminDialog,
+      confirmRevokeDeviceAdmin,
     };
   },
   template: `
@@ -1579,11 +1881,11 @@ const AccessRequestsListPage = defineComponent({
               :ptOptions="{ mergeSections: true, mergeProps: true }"
             >
             <template #expansion="{ data }">
-              <div class="flex flex-col gap-4 p-4 bg-neutral-surface">
+              <div class="box-border border-t border-neutral-default_solid bg-neutral-surface px-md py-5">
                 <!-- Error: Approval flow changed during execution -->
                 <div
                   v-if="data.status === 'Error'"
-                  class="flex items-start gap-3 rounded-lg border border-error-base/30 bg-feedback-error-surface p-4 max-w-[800px]"
+                  class="flex max-w-2xl items-start gap-3 rounded-lg border border-error-base/30 bg-feedback-error-surface p-4"
                 >
                   <ExclamationTriangleIcon class="size-6 shrink-0 text-error-base" aria-hidden="true" />
                   <p class="text-body-md text-neutral-base">
@@ -1592,7 +1894,7 @@ const AccessRequestsListPage = defineComponent({
                 </div>
 
                 <!-- Approval flow visual (hidden for Error — replaced by error message above) -->
-                <template v-if="data.status !== 'Error'">
+                <div v-if="data.status !== 'Error'" class="flex max-w-4xl flex-col gap-6">
                 <!-- Header: App icon + Title or Approval Flow Description -->
                 <div class="flex items-center gap-3">
                   <div class="size-8 shrink-0 rounded flex items-center justify-center bg-info-surface border border-info-base/20">
@@ -1605,27 +1907,34 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                 </div>
 
-                <!-- Request Details (2-column grid) -->
-                <div class="grid grid-cols-2 gap-x-6 gap-y-3">
-                  <DetailsKeyValue label="Requester">
+                <!-- Request Details (2-column grid with vertical label/value pairs) -->
+                <div class="grid grid-cols-1 gap-y-5 sm:grid-cols-2 sm:gap-x-20 sm:gap-y-5">
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-body-md-semi-bold text-neutral-base">Requester</span>
                     <LinkText :label="data.requester" href="#" class="text-body-md" />
-                  </DetailsKeyValue>
-                  <DetailsKeyValue label="Manager">
+                  </div>
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-body-md-semi-bold text-neutral-base">Manager</span>
                     <span
                       v-if="data.manager === 'Not Provided' || !data.manager"
                       class="text-body-md text-error-base"
                     >{{ data.manager || 'Not Provided' }}</span>
                     <LinkText v-else :label="data.manager" href="#" class="text-body-md" />
-                  </DetailsKeyValue>
-                  <DetailsKeyValue
-                    label="Duration"
-                    :value="(data.manager === 'Not Provided' || !data.manager || data.status === 'Missing Data') ? 'N/A' : data.duration"
-                  />
-                  <DetailsKeyValue label="Reason for Request" :value="data.reasonForRequest" />
+                  </div>
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-body-md-semi-bold text-neutral-base">Duration</span>
+                    <span class="text-body-md text-neutral-base">
+                      {{ (data.manager === 'Not Provided' || !data.manager || data.status === 'Missing Data') ? 'N/A' : data.duration }}
+                    </span>
+                  </div>
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-body-md-semi-bold text-neutral-base">Reason for Request</span>
+                    <span class="text-body-md text-neutral-base">{{ data.reasonForRequest }}</span>
+                  </div>
                 </div>
 
                 <!-- Approval Progress: Multi-step for Missing Data, single for others -->
-                <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-4 border-t border-neutral-default_solid pt-6">
                   <span class="text-body-md-semi-bold text-neutral-base">Approval Progress</span>
                   <template v-if="data.status === 'Missing Data' && data.approvalSteps?.length">
                     <div
@@ -1723,11 +2032,19 @@ const AccessRequestsListPage = defineComponent({
                 </div>
 
                 <!-- Action Buttons (for Pending and Missing Data) -->
-                <div v-if="data.status === 'Pending' || data.status === 'Missing Data'" class="flex gap-sm pt-2">
-                  <Button label="Deny Access" severity="danger" variant="outlined" />
-                  <Button label="Grant Access" />
+                <div
+                  v-if="data.status === 'Pending' || data.status === 'Missing Data'"
+                  class="flex gap-sm border-t border-neutral-default_solid pt-4"
+                >
+                  <Button
+                    label="Deny Access"
+                    severity="danger"
+                    variant="outlined"
+                    @click="openDenyAccessDialog(data.id)"
+                  />
+                  <Button label="Grant Access" @click="openGrantAccessDialog(data.id)" />
                 </div>
-                </template>
+                </div>
               </div>
             </template>
 
@@ -1815,7 +2132,7 @@ const AccessRequestsListPage = defineComponent({
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
                 :data="timedAccessRows"
-                :columns="timedAccessColumns"
+                :columns="timedAccessColumnsWithActions"
                 selection-mode="multiple"
                 v-model:selection="timedAccessSelection"
                 :paginator="showTimedAccessPaginator"
@@ -1901,7 +2218,7 @@ const AccessRequestsListPage = defineComponent({
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
                 :data="deviceAdminRows"
-                :columns="deviceAdminSessionColumns"
+                :columns="deviceAdminColumnsWithActions"
                 selection-mode="multiple"
                 v-model:selection="deviceAdminSelection"
                 :paginator="showDeviceAdminPaginator"
@@ -2239,6 +2556,200 @@ const AccessRequestsListPage = defineComponent({
               severity="danger"
               variant="outlined"
               @click="confirmDisableApprovalFlow"
+            />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showGrantAccessDialog"
+        :draggable="false"
+        modal
+        header="Grant Access"
+        :style="{ width: '560px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <div class="flex flex-col gap-md">
+          <p class="text-body-md text-neutral-base">
+            <span class="text-body-md-semi-bold">{{ pendingAccessRequest?.requester }}</span>
+            will be given access to
+            <span class="text-body-md-semi-bold">{{ grantAccessResourceName }}.</span>
+          </p>
+
+          <div class="grid grid-cols-2 gap-md">
+            <FormField label="Access Duration">
+              <template #default="{ inputId }">
+                <Select
+                  :inputId="inputId"
+                  v-model="grantAccessDuration"
+                  :options="grantAccessDurationOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  appendTo="body"
+                  class="w-full"
+                />
+              </template>
+            </FormField>
+            <FormField label="Access Expiration">
+              <template #default>
+                <span class="text-body-md text-neutral-base">{{ grantAccessExpirationLabel }}</span>
+              </template>
+            </FormField>
+          </div>
+
+          <FormField label="Message to Requester (optional)">
+            <template #default="{ inputId }">
+              <Textarea
+                :id="inputId"
+                v-model="grantAccessMessage"
+                class="w-full"
+                rows="4"
+              />
+            </template>
+          </FormField>
+        </div>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeGrantAccessDialog"
+            />
+            <Button label="Grant Access" @click="confirmGrantAccess" />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showDenyAccessDialog"
+        :draggable="false"
+        modal
+        header="Deny Access"
+        :style="{ width: '560px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <div class="flex flex-col gap-md">
+          <p class="text-body-md text-neutral-base">
+            <span class="text-body-md-semi-bold">{{ pendingAccessRequest?.requester }}</span>
+            will not be given access to
+            <span class="text-body-md-semi-bold">{{ grantAccessResourceName }}.</span>
+          </p>
+
+          <FormField
+            label="Reason"
+            required
+            helpText="Reason for denial will be provided to the requester."
+          >
+            <template #default="{ inputId }">
+              <Textarea
+                :id="inputId"
+                v-model="denyAccessReason"
+                class="w-full"
+                rows="4"
+              />
+            </template>
+          </FormField>
+
+          <FormField
+            label="Internal notes (optional)"
+            helpText="Internal Notes will only be viewable in DI events."
+          >
+            <template #default="{ inputId }">
+              <Textarea
+                :id="inputId"
+                v-model="denyAccessInternalNotes"
+                class="w-full"
+                rows="4"
+              />
+            </template>
+          </FormField>
+        </div>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeDenyAccessDialog"
+            />
+            <Button
+              label="Deny Access"
+              severity="danger"
+              variant="outlined"
+              :disabled="denyAccessConfirmDisabled"
+              @click="confirmDenyAccess"
+            />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showRevokeTimedAccessDialog"
+        :draggable="false"
+        modal
+        header="Revoke Access"
+        :style="{ width: '560px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <p class="text-body-md text-neutral-base">
+          Are you sure you want to revoke the Timed Access session for
+          <span class="text-body-md-semi-bold">{{ pendingRevokeTimedAccessSession?.user }}</span>?
+        </p>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeRevokeTimedAccessDialog"
+            />
+            <Button
+              label="Revoke"
+              severity="danger"
+              variant="outlined"
+              @click="confirmRevokeTimedAccess"
+            />
+          </div>
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="showRevokeDeviceAdminDialog"
+        :draggable="false"
+        modal
+        header="Revoke Access"
+        :style="{ width: '560px' }"
+      >
+        <template #closeicon><XMarkIcon /></template>
+        <p v-if="revokeDeviceAdminBulkMode" class="text-body-md text-neutral-base">
+          Are you sure you want to revoke the Device Admin sessions for the
+          <span class="text-body-md-semi-bold">{{ revokeDeviceAdminSelectedUserCount }}</span>
+          selected users?
+        </p>
+        <p v-else class="text-body-md text-neutral-base">
+          Are you sure you want to revoke the Device Admin session for
+          <span class="text-body-md-semi-bold">{{ pendingRevokeDeviceAdminSession?.user }}</span>
+          on
+          <span class="text-body-md-semi-bold">{{ pendingRevokeDeviceAdminSession?.device }}</span>?
+        </p>
+        <template #footer>
+          <div class="flex items-center flex-1 min-w-0" />
+          <div class="flex gap-sm shrink-0">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="outlined"
+              @click="closeRevokeDeviceAdminDialog"
+            />
+            <Button
+              label="Revoke"
+              severity="danger"
+              variant="outlined"
+              @click="confirmRevokeDeviceAdmin"
             />
           </div>
         </template>
