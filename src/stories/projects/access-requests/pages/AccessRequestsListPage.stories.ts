@@ -220,7 +220,6 @@ const timedAccessSessionsData: TimedAccessSessionRow[] = [
 const deviceAdminSessionsData: DeviceAdminSessionRow[] = [
   { id: 'da-1', user: 'Jamie Rivera', device: 'MacBook Pro #4421', os: 'macOS', timeRemainingLabel: '4h:23m' },
   { id: 'da-2', user: 'Mel Park', device: 'Windows VM #882', os: 'Windows', timeRemainingLabel: '0h:45m' },
-  { id: 'da-4', user: 'Quinn Frost', device: 'Chromebook fleet #1204', os: 'Chrome OS', timeRemainingLabel: '23h:59m' },
 ];
 
 // ─── Mock Data (matches image) ───
@@ -892,12 +891,12 @@ function parseIsoDate(value: string): Date | null {
 
 const mainTabs = [
   { label: 'Request Queue (6)', value: 'request-queue' },
-  { label: 'Active Sessions (6)', value: 'active-sessions' },
+  { label: 'Active Sessions (5)', value: 'active-sessions' },
   { label: 'Approval Flows (5)', value: 'approval-flows' },
 ];
 
 const activeSessionsSubTabOptions = [
-  { label: 'Device Admin (3)', value: 'device-admin' },
+  { label: 'Device Admin (2)', value: 'device-admin' },
   { label: 'Timed Access (3)', value: 'timed-access' },
 ];
 
@@ -1265,7 +1264,7 @@ const AccessRequestsListPage = defineComponent({
 
       return [
         {
-          label: 'Revoke selected',
+          label: 'Revoke',
           disabled:
             activeSessionsSubTab.value === 'timed-access'
               ? !singleTimedAccessSelected
@@ -1282,7 +1281,6 @@ const AccessRequestsListPage = defineComponent({
             }
           },
         },
-        { label: 'Export list', command: () => {} },
       ];
     });
 
