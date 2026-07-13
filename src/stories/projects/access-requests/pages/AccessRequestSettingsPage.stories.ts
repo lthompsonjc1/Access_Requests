@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/vue3';
-import { defineComponent, ref, watch } from 'vue';
+import { computed, defineComponent, ref, watch } from 'vue';
 import {
   AppNavigation,
   PageHeader,
@@ -45,6 +45,13 @@ import {
 
 const settingCardClass = 'w-full rounded-lg bg-neutral-surface shadow-e100';
 
+/** Webhook channels available to add (excludes channels already configured on the page) */
+const availableWebhookChannelOptions = [
+  { id: 'avail-1', name: 'Security Alerts Webhook' },
+  { id: 'avail-2', name: 'IT Ops Notifications' },
+  { id: 'avail-3', name: 'Production Events' },
+];
+
 const AccessRequestSettingsPage = defineComponent({
   name: 'AccessRequestSettingsPage',
   components: {
@@ -73,7 +80,7 @@ const AccessRequestSettingsPage = defineComponent({
     XMarkIcon,
   },
   setup() {
-    const accessRequestsOn = ref(true);
+    const accessRequestsOn = ref(false);
     const notifyViaEmail = ref(true);
     const notifyRequestReceived = ref(true);
     const notifyApprovalDenial = ref(true);
@@ -81,9 +88,49 @@ const AccessRequestSettingsPage = defineComponent({
     const settingsWebhookChannels = ref(createDefaultSettingsWebhookChannels());
     const showSelectChannelModal = ref(false);
     const selectChannelSearch = ref('');
-    const selectChannelSelectedCount = ref(0);
+    const selectChannelSelectedIds = ref<string[]>([]);
     const showRemoveWebhookChannelDialog = ref(false);
     const webhookChannelIdPendingRemoval = ref<string | null>(null);
+
+    const selectableWebhookChannels = computed(() =>
+      availableWebhookChannelOptions.filter(
+        (option) => !settingsWebhookChannels.value.some((configured) => configured.name === option.name),
+      ),
+    );
+
+    const filteredSelectableWebhookChannels = computed(() => {
+      const query = selectChannelSearch.value.trim().toLowerCase();
+      if (!query) return selectableWebhookChannels.value;
+      return selectableWebhookChannels.value.filter((channel) =>
+        channel.name.toLowerCase().includes(query),
+      );
+    });
+
+    const selectChannelSelectedCount = computed(() => selectChannelSelectedIds.value.length);
+
+    const selectChannelEmptyMessage = computed(() => {
+      if (selectableWebhookChannels.value.length === 0) {
+        return 'No webhook channels available to add.';
+      }
+      if (selectChannelSearch.value.trim()) {
+        return 'No channels match your search.';
+      }
+      return '';
+    });
+
+    function isSelectChannelOptionSelected(id: string) {
+      return selectChannelSelectedIds.value.includes(id);
+    }
+
+    function toggleSelectChannelOption(id: string, selected: boolean) {
+      if (selected) {
+        if (!selectChannelSelectedIds.value.includes(id)) {
+          selectChannelSelectedIds.value = [...selectChannelSelectedIds.value, id];
+        }
+        return;
+      }
+      selectChannelSelectedIds.value = selectChannelSelectedIds.value.filter((value) => value !== id);
+    }
 
     function removeSettingsWebhookChannel(id: string) {
       settingsWebhookChannels.value = settingsWebhookChannels.value.filter((c) => c.id !== id);
@@ -109,17 +156,21 @@ const AccessRequestSettingsPage = defineComponent({
     });
 
     function openSelectChannelModal() {
+      selectChannelSelectedIds.value = [];
+      selectChannelSearch.value = '';
       showSelectChannelModal.value = true;
     }
 
     function closeSelectChannelModal() {
       showSelectChannelModal.value = false;
       selectChannelSearch.value = '';
+      selectChannelSelectedIds.value = [];
     }
 
     function handleSelectChannelAdd() {
       showSelectChannelModal.value = false;
       selectChannelSearch.value = '';
+      selectChannelSelectedIds.value = [];
     }
 
     function navigateToList() {
@@ -148,6 +199,10 @@ const AccessRequestSettingsPage = defineComponent({
       showSelectChannelModal,
       selectChannelSearch,
       selectChannelSelectedCount,
+      filteredSelectableWebhookChannels,
+      selectChannelEmptyMessage,
+      isSelectChannelOptionSelected,
+      toggleSelectChannelOption,
       openSelectChannelModal,
       closeSelectChannelModal,
       handleSelectChannelAdd,
@@ -166,7 +221,7 @@ const AccessRequestSettingsPage = defineComponent({
       <div class="main flex h-full min-h-0 min-w-0 w-full flex-[1_1_0] flex-col self-stretch overflow-hidden">
         <TopBar />
         <div class="flex min-h-0 h-full w-full min-w-0 flex-[1_1_0] flex-col overflow-hidden">
-          <PageHeader class="shrink-0" title="Access Requests">
+          <PageHeader class="shrink-0" title="Access requests">
             <template #icon>
               <ClipboardDocumentCheckIcon class="size-7" />
             </template>
@@ -176,11 +231,11 @@ const AccessRequestSettingsPage = defineComponent({
             <ConfigPageLayout class="w-full! h-full!" maxWidth="1024">
               <div class="flex flex-col gap-8 pb-xl">
                 <section class="flex flex-col gap-4">
-                  <PageSection title="Access Request Settings">
+                  <PageSection title="Access request settings">
                     <template #actions><span /></template>
                     <template #subtitle>
                       <span class="text-body-sm text-neutral-muted">
-                        Configure Resource Access settings for your organization.
+                        Configure resource access settings for your organization.
                         <LinkText
                           href="#"
                           target="_blank"
@@ -188,7 +243,7 @@ const AccessRequestSettingsPage = defineComponent({
                           :showIcon="false"
                           customClass="text-body-sm-link inline-flex items-center gap-1"
                         >
-                          Learn More
+                          Learn more
                           <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-current" aria-hidden="true" />
                         </LinkText>
                       </span>
@@ -198,7 +253,7 @@ const AccessRequestSettingsPage = defineComponent({
                   <div :class="settingCardClass">
                     <SettingCardItem
                       v-model:toggle-value="accessRequestsOn"
-                      title="Access Requests On"
+                      title="Access requests on"
                       :has-bottom-border="false"
                     >
                       <template #description>
@@ -228,7 +283,7 @@ const AccessRequestSettingsPage = defineComponent({
                     >
                       <template #description>
                         <span class="text-body-sm text-neutral-muted">
-                          Receive Access Request notifications via email.
+                          Receive access request notifications via email.
                         </span>
                       </template>
                     </SettingCardItem>
@@ -242,10 +297,14 @@ const AccessRequestSettingsPage = defineComponent({
                       </h4>
                       <div class="flex flex-col gap-3">
                         <CheckboxWithLabel v-model="notifyRequestReceived" :binary="true">
-                          <template #label>Request Received Confirmation</template>
+                          <template #label>
+                            <span class="text-body-md text-neutral-base">Request received confirmation</span>
+                          </template>
                         </CheckboxWithLabel>
                         <CheckboxWithLabel v-model="notifyApprovalDenial" :binary="true">
-                          <template #label>Request Approval/Denial</template>
+                          <template #label>
+                            <span class="text-body-md text-neutral-base">Request approval/decline</span>
+                          </template>
                         </CheckboxWithLabel>
                       </div>
                     </div>
@@ -253,14 +312,14 @@ const AccessRequestSettingsPage = defineComponent({
                 </section>
 
                 <section class="flex flex-col gap-4">
-                  <PageSection title="Approver Progress Indicator">
+                  <PageSection title="Approver progress indicator">
                     <template #actions><span /></template>
                   </PageSection>
 
                   <div :class="settingCardClass">
                     <SettingCardItem
                       v-model:toggle-value="exposeApprovalProgress"
-                      title="Expose the Approval Progress to end users"
+                      title="Expose the approval progress to end users"
                       :has-bottom-border="false"
                     >
                       <template #description>
@@ -273,10 +332,10 @@ const AccessRequestSettingsPage = defineComponent({
                 </section>
 
                 <section class="flex flex-col gap-4">
-                  <PageSection title="Webhook Notifications">
+                  <PageSection title="Webhook notifications">
                     <template #subtitle>
                       <span class="text-body-sm text-neutral-muted">
-                        Receive Access Request event notifications using your already configured webhook channels.
+                        Receive access request event notifications using your already configured webhook channels.
                         <LinkText
                           href="#"
                           target="_blank"
@@ -284,14 +343,14 @@ const AccessRequestSettingsPage = defineComponent({
                           :showIcon="false"
                           customClass="text-body-sm-link inline-flex items-center gap-1"
                         >
-                          Learn More
+                          Learn more
                           <ArrowTopRightOnSquareIcon class="size-4 shrink-0 text-current" aria-hidden="true" />
                         </LinkText>
                       </span>
                     </template>
                     <template #actions>
                       <Button
-                        label="Select Channel"
+                        label="Select channel"
                         severity="secondary"
                         variant="outlined"
                         @click="openSelectChannelModal"
@@ -300,7 +359,7 @@ const AccessRequestSettingsPage = defineComponent({
                   </PageSection>
 
                   <div class="flex flex-col gap-sm">
-                    <span class="text-body-md-semi-bold text-neutral-base">Webhook Channel</span>
+                    <span class="text-body-md-semi-bold text-neutral-base">Webhook channel</span>
                     <div
                       v-for="ch in settingsWebhookChannels"
                       :key="ch.id"
@@ -351,7 +410,7 @@ const AccessRequestSettingsPage = defineComponent({
                             class="cursor-pointer text-body-md text-neutral-base pt-0.5"
                             :for="'webhook-select-all-' + ch.id"
                           >
-                            Select All
+                            Select all
                           </label>
                         </div>
                         <div class="flex flex-col gap-md border-l border-neutral-default_solid pl-md ml-sm">
@@ -391,13 +450,13 @@ const AccessRequestSettingsPage = defineComponent({
         v-model:visible="showSelectChannelModal"
         :draggable="false"
         modal
-        header="Select Channel"
+        header="Select channel"
         :style="{ width: '560px' }"
       >
         <template #closeicon><XMarkIcon /></template>
         <div class="flex flex-col gap-md">
           <span class="text-body-md text-neutral-base">
-            Select Webhook Channels ({{ selectChannelSelectedCount }})
+            Select webhook channels ({{ selectChannelSelectedCount }})
           </span>
           <FormField label="Search channels">
             <template #default="{ inputId }">
@@ -415,8 +474,28 @@ const AccessRequestSettingsPage = defineComponent({
             </template>
           </FormField>
           <div
-            class="flex min-h-60 flex-col rounded-md border border-neutral-default_solid bg-neutral-base"
-          />
+            v-if="filteredSelectableWebhookChannels.length"
+            class="flex max-h-60 flex-col gap-3 overflow-y-auto rounded-md border border-neutral-default_solid bg-neutral-base p-3"
+          >
+            <CheckboxWithLabel
+              v-for="channel in filteredSelectableWebhookChannels"
+              :key="channel.id"
+              :modelValue="isSelectChannelOptionSelected(channel.id)"
+              :binary="true"
+              :inputId="'select-channel-' + channel.id"
+              @update:modelValue="toggleSelectChannelOption(channel.id, $event)"
+            >
+              <template #label>
+                <span class="text-body-md text-neutral-base">{{ channel.name }}</span>
+              </template>
+            </CheckboxWithLabel>
+          </div>
+          <p
+            v-else-if="selectChannelEmptyMessage"
+            class="text-body-sm text-neutral-subtle"
+          >
+            {{ selectChannelEmptyMessage }}
+          </p>
         </div>
         <template #footer>
           <div class="flex items-center flex-1 min-w-0" />
@@ -440,12 +519,12 @@ const AccessRequestSettingsPage = defineComponent({
         v-model:visible="showRemoveWebhookChannelDialog"
         :draggable="false"
         modal
-        header="Remove Webhook Channel"
+        header="Remove webhook channel"
         :style="{ width: '480px' }"
       >
         <template #closeicon><XMarkIcon /></template>
         <p class="text-body-md text-neutral-subtle">
-          Removing this webhook channel from Access Requests will end notifications for all selected events.
+          Removing this webhook channel from Access requests will end notifications for all selected events.
         </p>
         <template #footer>
           <div class="flex items-center flex-1 min-w-0" />

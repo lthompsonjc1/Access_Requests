@@ -15,7 +15,17 @@ export const WEBHOOK_ACCESS_EVENT_DEFINITIONS: WebhookAccessEventDefinition[] = 
   {
     id: 'access_management_access_request_approval',
     key: 'access_management_access_request_approval',
-    description: 'Access Management request is approved or denied.',
+    description: 'Access Management request is approved or declined.',
+  },
+  {
+    id: 'access_management_access_granted',
+    key: 'access_management_access_granted',
+    description: 'Access Management request access is granted to the requester.',
+  },
+  {
+    id: 'access_management_access_request_expired',
+    key: 'access_management_access_request_expired',
+    description: 'Access Management request expired without completion.',
   },
   {
     id: 'access_management_association_change',

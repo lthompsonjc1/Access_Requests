@@ -118,6 +118,9 @@ export const ACCESS_REQUESTS_LIST_STORY_PATH =
 export const ACCESS_REQUESTS_SETTINGS_STORY_PATH =
   '/?path=/story/projects-access-requests-pages-access-request-settings--default';
 
+export const ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH =
+  '/?path=/story/projects-access-requests-pages-add-resource-request-flow--default';
+
 export function navigateToStorybookStory(storyPath: string) {
   const target = window.parent ?? window;
   const normalizedPath = storyPath.startsWith('/') ? storyPath : `/${storyPath}`;

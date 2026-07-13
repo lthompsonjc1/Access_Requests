@@ -12,7 +12,9 @@ import {
   LinkText,
   MessageNotification,
   ToggleSwitch,
+  ActionsToolbar,
 } from '@jumpcloud/circuit/components';
+import type { Action, SelectedItem } from '@jumpcloud/circuit/components';
 import Menu from 'primevue/menu';
 import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
@@ -21,11 +23,9 @@ import Dialog from 'primevue/dialog';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
 import {
   ArrowTopRightOnSquareIcon,
-  ChevronDownIcon,
   ClipboardDocumentCheckIcon,
   Cog6ToothIcon,
   EllipsisHorizontalIcon,
@@ -33,6 +33,7 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon,
   MagnifyingGlassIcon,
+  PlusIcon,
   XCircleIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline';
@@ -40,6 +41,7 @@ import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 import TopBar from '@/components/TopBar.vue';
 import {
+  ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH,
   ACCESS_REQUESTS_SETTINGS_STORY_PATH,
   menuItems,
   navigateToStorybookStory,
@@ -48,43 +50,62 @@ import {
 
 // ─── Types ───
 
+/** Phase 1 requestable resource types; Phase 2 adds tray-initiated device admin/sudo */
+type AccessRequestResourceType =
+  | 'SSO application'
+  | 'Device group'
+  | 'RADIUS'
+  | 'Directory'
+  | 'Device admin / sudo';
+
+/** Phase 1 workflow states */
+type AccessRequestStatus =
+  | 'Pending'
+  | 'Approved'
+  | 'Granted'
+  | 'Declined'
+  | 'Expired'
+  | 'Error';
+
 interface AccessRequest {
   id: number;
   received: string;
-  /** Request type: resource (app) approval vs device administration */
-  type: 'Resource Approval' | 'Device Admin';
+  type: AccessRequestResourceType;
   name: string;
   requester: string;
   department: string;
   /** Approval mode: Manual or Automatic */
   approvalType: 'Manual' | 'Automatic';
-  status: 'Error' | 'Missing Data' | 'Pending' | 'Approved' | 'Denied' | 'Expired';
+  status: AccessRequestStatus;
   /** Expanded view fields */
   approvalTitle: string;
   manager: string;
-  duration: string;
   reasonForRequest: string;
+  /** Target user group configured in access method */
+  accessGroup: string;
   approver: string;
   approvalProgressStatus: string;
-  /** Others tab: progress counts (1–3 approvers) */
+  /** Error expansion copy when status is Error */
+  errorReason?: string;
+  /** Phase 2: administrator vs delegated approval routing */
+  approvalRoute: 'administrator' | 'delegated';
+  /** Delegated flows: multi-step progress */
   approvedCount?: number;
   totalApprovers?: number;
-  /** Missing Data expanded view */
-  approvalFlowDescription?: string;
   approvalSteps?: Array<{
-    type: 'actionRequired' | 'pending' | 'approved';
+    type: 'pending' | 'approved' | 'declined';
     approver: string;
+    roleLabel: string;
     status: string;
-    actionLink?: { label: string; href: string };
   }>;
 }
 
-/** Approval Flows tab — configuration rows (not request queue items) */
+/** Approval flows tab — configuration rows (not request queue items) */
 interface ApprovalFlowRow {
   id: string;
   name: string;
-  flowType: 'Device Admin' | 'Resource Approval';
-  /** Resource Approval flows only; Device Admin flows omit assignment (shown as --) */
+  flowType: 'Device admin' | 'Resource approval';
+  /** Resource approval flows only; Device admin flows omit assignment (shown as --) */
   userGroupAssignment: string;
   approvalMode: 'Manual' | 'Automatic';
   /** Shown in Status column (toggle + label) */
@@ -99,48 +120,48 @@ const initialApprovalFlows: ApprovalFlowRow[] = [
   {
     id: 'f-admins',
     name: 'Confluence - Admins',
-    flowType: 'Resource Approval',
+    flowType: 'Resource approval',
     userGroupAssignment: 'Confluence For Admins',
     approvalMode: 'Manual',
     enabled: true,
     expansionDescription:
-      "Approval Flow description goes here. A long description can fit and if necessary it can even wrap but I don't think that will be neccessary.",
+      "Approval flow description goes here. A long description can fit and if necessary it can even wrap but I don't think that will be neccessary.",
     configurationSteps: [
-      { name: 'Katana Blade', roleLabel: 'Required Approver' },
-      { name: 'Johnny Cage', roleLabel: 'Optional Approver' },
+      { name: 'Katana Blade', roleLabel: 'Required approver' },
+      { name: 'Johnny Cage', roleLabel: 'Optional approver' },
     ],
   },
-  { id: 'f1', name: 'Sudo Admin - 1 hr', flowType: 'Device Admin', userGroupAssignment: '', approvalMode: 'Manual', enabled: true },
+  { id: 'f1', name: 'Sudo Admin - 1 hr', flowType: 'Device admin', userGroupAssignment: '', approvalMode: 'Manual', enabled: true },
   {
     id: 'f2',
     name: 'Confluence - Users',
-    flowType: 'Resource Approval',
+    flowType: 'Resource approval',
     userGroupAssignment: 'Confluence For Users',
     approvalMode: 'Manual',
     enabled: true,
     expansionDescription:
       'Grants Confluence user permissions to members of the assigned user group after manager and team lead approval.',
     configurationSteps: [
-      { name: 'Sarah Chen', roleLabel: 'Required Approver' },
-      { name: 'Marcus Webb', roleLabel: 'Required Approver' },
-      { name: 'Elena Vasquez', roleLabel: 'Optional Approver' },
+      { name: 'Sarah Chen', roleLabel: 'Required approver' },
+      { name: 'Marcus Webb', roleLabel: 'Required approver' },
+      { name: 'Elena Vasquez', roleLabel: 'Optional approver' },
     ],
   },
   {
     id: 'f3',
     name: 'UX Tools',
-    flowType: 'Resource Approval',
+    flowType: 'Resource approval',
     userGroupAssignment: 'Design Tools',
     approvalMode: 'Automatic',
     enabled: true,
     expansionDescription:
       'Provides access to UX and design tooling for designers; automatic approval when eligibility criteria are met.',
     configurationSteps: [
-      { name: 'Priya Narayan', roleLabel: 'Required Approver' },
-      { name: 'David Okonkwo', roleLabel: 'Optional Approver' },
+      { name: 'Priya Narayan', roleLabel: 'Required approver' },
+      { name: 'David Okonkwo', roleLabel: 'Optional approver' },
     ],
   },
-  { id: 'f4', name: 'DEV Tools', flowType: 'Device Admin', userGroupAssignment: '', approvalMode: 'Automatic', enabled: true },
+  { id: 'f4', name: 'DEV Tools', flowType: 'Device admin', userGroupAssignment: '', approvalMode: 'Automatic', enabled: true },
 ];
 
 /** Active Sessions — Timed Access tab */
@@ -152,35 +173,24 @@ interface TimedAccessSessionRow {
   timeRemainingLabel: string;
 }
 
-/** Active Sessions — Device Admin tab */
+/** Active Sessions — Device admin tab */
 interface DeviceAdminSessionRow {
   id: string;
   user: string;
   device: string;
   os: string;
-  /** Remaining time label — same format as Timed Access (e.g. 4h:23m, 6d:23h:18m) */
+  /** Remaining time label — same format as Timed access (e.g. 4h:23m, 6d:23h:18m) */
   timeRemainingLabel: string;
 }
 
 const PAGINATION_THRESHOLD = 10;
 
-const grantAccessDurationOptions = [
-  { label: '30 Days', value: 30 },
-  { label: '60 Days', value: 60 },
-  { label: '90 Days', value: 90 },
-  { label: '365 Days', value: 365 },
-];
+/** Phase 1: incomplete requests expire after 30 days */
+const REQUEST_EXPIRY_DAYS = 30;
 
-function parseDurationDays(duration: string | undefined): number {
-  const match = duration?.match(/(\d+)/);
-  if (!match) return 90;
-  const days = Number(match[1]);
-  return grantAccessDurationOptions.some((opt) => opt.value === days) ? days : 90;
-}
-
-function formatGrantAccessExpiration(days: number): string {
+function formatRequestExpiryDate(): string {
   const date = new Date();
-  date.setDate(date.getDate() + days);
+  date.setDate(date.getDate() + REQUEST_EXPIRY_DAYS);
   return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
@@ -222,43 +232,322 @@ const deviceAdminSessionsData: DeviceAdminSessionRow[] = [
   { id: 'da-2', user: 'Mel Park', device: 'Windows VM #882', os: 'Windows', timeRemainingLabel: '0h:45m' },
 ];
 
-// ─── Mock Data (matches image) ───
+// ─── Mock Data ───
 
 const accessRequestsData: AccessRequest[] = [
-  { id: 1, received: 'January 27, 2026 at 9:11 AM', type: 'Device Admin', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Timed access for design review tasks', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 2, received: 'January 19, 2026 at 10:11 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Design project', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 3, received: 'January 12, 2026 at 10:31 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'UX research', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 4, received: 'December 18, 2025 at 6:38 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Prototyping', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 5, received: 'December 18, 2025 at 6:36 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Error', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Collaboration', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 6, received: 'December 15, 2025 at 2:14 PM', type: 'Resource Approval', name: 'Onboarding Resources for new employees', requester: 'Julian Upton', department: 'Product', approvalType: 'Manual', status: 'Missing Data', approvalTitle: 'Onboarding Resources for new employees', manager: 'Not Provided', duration: '30 Days', reasonForRequest: 'lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval', approvalFlowDescription: 'Approval Flow description goes here. Truncate longer descriptions. Let\'s try a max width 800px. Include show more link', approvalSteps: [{ type: 'actionRequired', approver: 'Manager Missing', status: 'Action Required', actionLink: { label: 'Add in users', href: '#' } }, { type: 'pending', approver: 'Johnny Cage', status: 'Pending Required Approval' }] },
-  { id: 7, received: 'December 10, 2025 at 11:22 AM', type: 'Resource Approval', name: 'Figma for UX', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Approved', approvalTitle: 'Time Limited Access to Figma', manager: 'Sarah Chen', duration: '5 Days', reasonForRequest: 'Design sprint', approver: 'Lorie Thompson', approvalProgressStatus: 'Approved' },
-  { id: 8, received: 'December 5, 2025 at 9:00 AM', type: 'Resource Approval', name: 'Jira', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Jira Project Access', manager: 'Sarah Chen', duration: '90 Days', reasonForRequest: 'Project management', approver: 'Lorie Thompson', approvalProgressStatus: 'Pending Required Approval' },
-  { id: 9, received: 'November 28, 2025 at 3:45 PM', type: 'Resource Approval', name: 'Confluence', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Denied', approvalTitle: 'Confluence Space Access', manager: 'Sarah Chen', duration: '30 Days', reasonForRequest: 'Documentation', approver: 'Lorie Thompson', approvalProgressStatus: 'Denied' },
-  { id: 10, received: 'November 15, 2025 at 10:00 AM', type: 'Resource Approval', name: 'GitHub', requester: 'Urvashi Requester', department: 'Product', approvalType: 'Manual', status: 'Expired', approvalTitle: 'GitHub Repository Access', manager: 'Sarah Chen', duration: '60 Days', reasonForRequest: 'Code review', approver: 'Lorie Thompson', approvalProgressStatus: 'Expired' },
+  {
+    id: 1,
+    received: 'January 27, 2026 at 9:11 AM',
+    type: 'SSO application',
+    name: 'Figma for UX',
+    requester: 'Urvashi Requester',
+    department: 'Product',
+    approvalType: 'Manual',
+    status: 'Error',
+    approvalTitle: 'Figma for UX',
+    manager: 'Sarah Chen',
+    reasonForRequest: 'Design project',
+    accessGroup: 'Figma_Designers',
+    approver: 'Administrator',
+    approvalProgressStatus: 'Error',
+    approvalRoute: 'administrator',
+    errorReason:
+      'Changes to the approval flow were made during the execution of the approval process. This request is no longer valid and must be re-requested by the end user.',
+  },
+  {
+    id: 2,
+    received: 'January 19, 2026 at 10:11 AM',
+    type: 'SSO application',
+    name: 'Salesforce Admin',
+    requester: 'Alex Chen',
+    department: 'Sales',
+    approvalType: 'Manual',
+    status: 'Error',
+    approvalTitle: 'Salesforce Admin',
+    manager: 'Jane Doe',
+    reasonForRequest: 'Need admin access for quarterly reporting',
+    accessGroup: 'Salesforce_Admins_Dynamic',
+    approver: 'Administrator',
+    approvalProgressStatus: 'Error',
+    approvalRoute: 'administrator',
+    errorReason:
+      'The configured access group has reached its dynamic group exemption limit (50). The requester could not be added to the group.',
+  },
+  {
+    id: 3,
+    received: 'December 10, 2025 at 11:22 AM',
+    type: 'SSO application',
+    name: 'Figma for UX',
+    requester: 'Urvashi Requester',
+    department: 'Product',
+    approvalType: 'Manual',
+    status: 'Approved',
+    approvalTitle: 'Figma for UX',
+    manager: 'Sarah Chen',
+    reasonForRequest: 'Design sprint',
+    accessGroup: 'Figma_Designers',
+    approver: 'Lorie Thompson',
+    approvalProgressStatus: 'Approved',
+    approvalRoute: 'administrator',
+  },
+  {
+    id: 4,
+    received: 'December 8, 2025 at 3:15 PM',
+    type: 'SSO application',
+    name: 'UX Tools',
+    requester: 'Priya Narayan',
+    department: 'Design',
+    approvalType: 'Automatic',
+    status: 'Granted',
+    approvalTitle: 'UX Tools',
+    manager: 'David Okonkwo',
+    reasonForRequest: 'Design tooling for new project',
+    accessGroup: 'Design_Tools',
+    approver: 'Auto',
+    approvalProgressStatus: 'Granted',
+    approvalRoute: 'administrator',
+  },
+  {
+    id: 5,
+    received: 'December 5, 2025 at 9:00 AM',
+    type: 'SSO application',
+    name: 'Jira',
+    requester: 'Urvashi Requester',
+    department: 'Product',
+    approvalType: 'Manual',
+    status: 'Pending',
+    approvalTitle: 'Jira Project Access',
+    manager: 'Sarah Chen',
+    reasonForRequest: 'Project management',
+    accessGroup: 'Jira_Users',
+    approver: 'Administrator',
+    approvalProgressStatus: 'Pending administrator approval',
+    approvalRoute: 'administrator',
+  },
+  {
+    id: 9,
+    received: 'July 2, 2026 at 8:42 AM',
+    type: 'Device admin / sudo',
+    name: 'Sudo Admin - 1 hr',
+    requester: 'Jamie Rivera',
+    department: 'Engineering',
+    approvalType: 'Manual',
+    status: 'Pending',
+    approvalTitle: 'Temporary Admin on MacBook Pro #4421',
+    manager: 'Sarah Chen',
+    reasonForRequest: 'Install development tooling requiring elevated privileges',
+    accessGroup: '—',
+    approver: 'Administrator',
+    approvalProgressStatus: 'Pending administrator approval',
+    approvalRoute: 'administrator',
+  },
+  {
+    id: 6,
+    received: 'November 28, 2025 at 3:45 PM',
+    type: 'SSO application',
+    name: 'Confluence',
+    requester: 'Urvashi Requester',
+    department: 'Product',
+    approvalType: 'Manual',
+    status: 'Declined',
+    approvalTitle: 'Confluence Space Access',
+    manager: 'Sarah Chen',
+    reasonForRequest: 'Documentation',
+    accessGroup: 'Confluence_Users',
+    approver: 'Lorie Thompson',
+    approvalProgressStatus: 'Declined',
+    approvalRoute: 'administrator',
+  },
+  {
+    id: 7,
+    received: 'November 15, 2025 at 10:00 AM',
+    type: 'Device group',
+    name: 'Engineering Laptops',
+    requester: 'Sam Dev',
+    department: 'Engineering',
+    approvalType: 'Manual',
+    status: 'Expired',
+    approvalTitle: 'Engineering Laptops',
+    manager: 'Tech Lead',
+    reasonForRequest: 'Need device group access for testing',
+    accessGroup: 'Engineering_Devices',
+    approver: 'Administrator',
+    approvalProgressStatus: 'Expired',
+    approvalRoute: 'administrator',
+  },
+  {
+    id: 8,
+    received: 'November 10, 2025 at 2:00 PM',
+    type: 'RADIUS',
+    name: 'Office Wi-Fi',
+    requester: 'Casey Nguyen',
+    department: 'Operations',
+    approvalType: 'Manual',
+    status: 'Granted',
+    approvalTitle: 'Office Wi-Fi Access',
+    manager: 'Ops Manager',
+    reasonForRequest: 'Remote office connectivity',
+    accessGroup: 'RADIUS_Office_Access',
+    approver: 'Lorie Thompson',
+    approvalProgressStatus: 'Granted',
+    approvalRoute: 'administrator',
+  },
 ];
 
-// Mock data for Others tab (non-admin approvers / multi-step approvals)
-// Progress: 0–3 of 1–3 approvals depending on configured approval flow
-const othersRequestsData: AccessRequest[] = [
-  { id: 11, received: 'March 17, 2026 at 2:30 PM', type: 'Device Admin', name: 'TESTING timed access', requester: 'Jessica Rabbit (End User)', department: 'Engineering', approvalType: 'Manual', status: 'Pending', approvalTitle: 'TESTING timed access', manager: 'Sarah Chen', duration: '30 Days', reasonForRequest: 'Testing access flow', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 0, totalApprovers: 1 },
-  { id: 12, received: 'March 2, 2026 at 10:15 AM', type: 'Resource Approval', name: 'Serhat Test App', requester: 'Serhat Can', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Serhat Test App', manager: 'Not Provided', duration: 'N/A', reasonForRequest: 'need access to serhat app please please!!!', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 0, totalApprovers: 2 },
-  { id: 13, received: 'March 1, 2026 at 9:00 AM', type: 'Resource Approval', name: 'Design System Access', requester: 'Alex Chen', department: 'Design', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Design System Access', manager: 'Jane Doe', duration: '90 Days', reasonForRequest: 'Design project', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 1, totalApprovers: 2 },
-  { id: 14, received: 'February 28, 2026 at 9:00 AM', type: 'Resource Approval', name: 'Repo Access', requester: 'Sam Dev', department: 'Engineering', approvalType: 'Manual', status: 'Approved', approvalTitle: 'Repo Access', manager: 'Tech Lead', duration: '365 Days', reasonForRequest: 'Code contribution', approver: 'Barış Ermut', approvalProgressStatus: 'Approved', approvedCount: 1, totalApprovers: 1 },
-  { id: 15, received: 'February 25, 2026 at 2:00 PM', type: 'Resource Approval', name: 'Multi-step Flow', requester: 'Test User', department: 'Product', approvalType: 'Manual', status: 'Pending', approvalTitle: 'Multi-step Flow', manager: 'Manager', duration: '30 Days', reasonForRequest: 'Testing', approver: 'Barış Ermut', approvalProgressStatus: 'Pending Required Approval', approvedCount: 2, totalApprovers: 3 },
+/** Phase 2: requests routed to non-admin approvers (admin portal is monitor-only) */
+const delegatedRequestsData: AccessRequest[] = [
+  {
+    id: 11,
+    received: 'March 17, 2026 at 2:30 PM',
+    type: 'SSO application',
+    name: 'Serhat Test App',
+    requester: 'Serhat Can',
+    department: 'Product',
+    approvalType: 'Manual',
+    status: 'Pending',
+    approvalTitle: 'Serhat Test App',
+    manager: 'Sarah Chen',
+    reasonForRequest: 'Need access to Serhat Test App for QA validation',
+    accessGroup: 'Serhat_Test_Users',
+    approver: 'Barış Ermut',
+    approvalProgressStatus: 'Pending required approval',
+    approvalRoute: 'delegated',
+    approvedCount: 0,
+    totalApprovers: 2,
+    approvalSteps: [
+      {
+        type: 'pending',
+        approver: 'Barış Ermut',
+        roleLabel: 'Resource owner',
+        status: 'Pending required approval',
+      },
+      {
+        type: 'pending',
+        approver: 'Sarah Chen',
+        roleLabel: "Requester's Manager",
+        status: 'Pending required approval',
+      },
+    ],
+  },
+  {
+    id: 12,
+    received: 'March 2, 2026 at 10:15 AM',
+    type: 'SSO application',
+    name: 'Design System Access',
+    requester: 'Alex Chen',
+    department: 'Design',
+    approvalType: 'Manual',
+    status: 'Pending',
+    approvalTitle: 'Design System Access',
+    manager: 'Jane Doe',
+    reasonForRequest: 'Design project collaboration',
+    accessGroup: 'Design_System_Users',
+    approver: 'Marcus Webb',
+    approvalProgressStatus: 'Pending required approval',
+    approvalRoute: 'delegated',
+    approvedCount: 1,
+    totalApprovers: 2,
+    approvalSteps: [
+      {
+        type: 'approved',
+        approver: 'Jane Doe',
+        roleLabel: "Requester's Manager",
+        status: 'Approved',
+      },
+      {
+        type: 'pending',
+        approver: 'Marcus Webb',
+        roleLabel: 'Resource owner',
+        status: 'Pending required approval',
+      },
+    ],
+  },
+  {
+    id: 13,
+    received: 'March 1, 2026 at 9:00 AM',
+    type: 'SSO application',
+    name: 'Repo Access',
+    requester: 'Sam Dev',
+    department: 'Engineering',
+    approvalType: 'Manual',
+    status: 'Granted',
+    approvalTitle: 'Repo Access',
+    manager: 'Tech Lead',
+    reasonForRequest: 'Code contribution',
+    accessGroup: 'Engineering_Repos',
+    approver: 'Elena Vasquez',
+    approvalProgressStatus: 'Granted',
+    approvalRoute: 'delegated',
+    approvedCount: 2,
+    totalApprovers: 2,
+    approvalSteps: [
+      {
+        type: 'approved',
+        approver: 'Tech Lead',
+        roleLabel: "Requester's Manager",
+        status: 'Approved',
+      },
+      {
+        type: 'approved',
+        approver: 'Elena Vasquez',
+        roleLabel: 'Resource owner',
+        status: 'Approved',
+      },
+    ],
+  },
+  {
+    id: 14,
+    received: 'February 25, 2026 at 2:00 PM',
+    type: 'SSO application',
+    name: 'Security Tools',
+    requester: 'Test User',
+    department: 'Security',
+    approvalType: 'Manual',
+    status: 'Pending',
+    approvalTitle: 'Security Tools',
+    manager: 'Manager',
+    reasonForRequest: 'Incident response tooling',
+    accessGroup: 'Security_Tools',
+    approver: 'Priya Narayan',
+    approvalProgressStatus: 'Pending required approval',
+    approvalRoute: 'delegated',
+    approvedCount: 0,
+    totalApprovers: 3,
+    approvalSteps: [
+      {
+        type: 'pending',
+        approver: 'Priya Narayan',
+        roleLabel: 'Resource owner',
+        status: 'Pending required approval',
+      },
+      {
+        type: 'pending',
+        approver: 'Manager',
+        roleLabel: "Requester's Manager",
+        status: 'Pending required approval',
+      },
+      {
+        type: 'pending',
+        approver: 'Security Team',
+        roleLabel: 'Security review',
+        status: 'Pending required approval',
+      },
+    ],
+  },
 ];
 
 // ─── Status Cell ───
 
 const statusTokenMapping: Record<string, { label: string; severity: string }> = {
   Error: { label: 'ERROR', severity: 'danger' },
-  'Missing Data': { label: 'MISSING DATA', severity: 'danger' },
   Pending: { label: 'PENDING', severity: 'warn' },
   Approved: { label: 'APPROVED', severity: 'success' },
-  Denied: { label: 'DENIED', severity: 'danger' },
+  Granted: { label: 'GRANTED', severity: 'success' },
+  Declined: { label: 'DECLINED', severity: 'danger' },
   Expired: { label: 'EXPIRED', severity: 'secondary' },
 };
 
-// ─── Progress Cell (Others tab: "X of Y approval(s)") ───
+// ─── Progress Cell (Phase 2 delegated flows: "X of Y approval(s)") ───
 
 const ProgressCell = defineComponent({
   name: 'ProgressCell',
@@ -304,7 +593,7 @@ const StatusCell = defineComponent({
   `,
 });
 
-// ─── Actions Cell (Grant Access / Deny Access for Pending, disabled otherwise) ───
+// ─── Actions Cell (Approve / Decline for Pending only) ───
 
 const ActionsCell = defineComponent({
   name: 'ActionsCell',
@@ -312,23 +601,24 @@ const ActionsCell = defineComponent({
   props: {
     status: { type: String, required: true },
     requestId: { type: Number, required: true },
-    onGrantAccess: { type: Function, default: undefined },
-    onDenyAccess: { type: Function, default: undefined },
+    canAct: { type: Boolean, default: true },
+    onApproveAccess: { type: Function, default: undefined },
+    onDeclineAccess: { type: Function, default: undefined },
   },
   setup(props) {
     const menuRef = ref<InstanceType<typeof Menu> | null>(null);
     const hasActions = computed(
-      () => props.status === 'Pending' || props.status === 'Missing Data',
+      () => props.canAct && props.status === 'Pending',
     );
 
     const menuItems = computed(() => [
       {
-        label: 'Grant Access',
-        command: () => props.onGrantAccess?.(props.requestId),
+        label: 'Approve access',
+        command: () => props.onApproveAccess?.(props.requestId),
       },
       {
-        label: 'Deny Access',
-        command: () => props.onDenyAccess?.(props.requestId),
+        label: 'Decline access',
+        command: () => props.onDeclineAccess?.(props.requestId),
       },
     ]);
 
@@ -360,7 +650,7 @@ const ActionsCell = defineComponent({
   `,
 });
 
-// ─── Approval Flows tab cells ───
+// ─── Approval flows tab cells ───
 
 const FlowNameCell = defineComponent({
   name: 'FlowNameCell',
@@ -409,7 +699,7 @@ const FlowEnabledStatusCell = defineComponent({
   `,
 });
 
-/** Timed Access + Device Admin active-session tables (same cell) */
+/** Timed Access + Device admin active-session tables (same cell) */
 const ActiveSessionRevokeCell = defineComponent({
   name: 'ActiveSessionRevokeCell',
   components: { Button },
@@ -438,7 +728,7 @@ const FlowActionsCell = defineComponent({
     const menuRef = ref<InstanceType<typeof Menu> | null>(null);
     const menuItems = computed(() => [
       { label: 'Edit', command: () => {} },
-      { label: 'Duplicate', command: () => {} },
+      { label: 'Copy', command: () => {} },
       { label: 'Delete', command: () => {} },
     ]);
     function toggleMenu(event: Event) {
@@ -477,7 +767,7 @@ const timedAccessColumns = [
   },
   {
     field: 'approvalFlow',
-    header: 'Approval Flow',
+    header: 'Approval flow',
     sortable: true,
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -487,7 +777,7 @@ const timedAccessColumns = [
   },
   {
     field: 'groupAssignment',
-    header: 'Group Assignment',
+    header: 'Group assignment',
     sortable: true,
     component: markRaw(DataTableCellLink),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -497,7 +787,7 @@ const timedAccessColumns = [
   },
   {
     field: 'timeRemainingLabel',
-    header: 'Time Remaining',
+    header: 'Time remaining',
     sortable: true,
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -546,7 +836,7 @@ const deviceAdminSessionColumns = [
   },
   {
     field: 'timeRemainingLabel',
-    header: 'Time Remaining',
+    header: 'Time remaining',
     sortable: true,
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -563,8 +853,7 @@ const deviceAdminSessionColumns = [
   },
 ];
 
-// ─── Column Definitions (order matches image) ───
-// Progress column only shown for Others tab (multi-step approvals); Administrator approves all directly
+// ─── Column Definitions ───
 
 const requestQueueAdministratorColumns = [
   {
@@ -615,7 +904,7 @@ const requestQueueAdministratorColumns = [
   },
   {
     field: 'approvalType',
-    header: 'Approval Mode',
+    header: 'Approval mode',
     sortable: true,
     component: markRaw(DataTableCellText),
     componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -643,62 +932,8 @@ const requestQueueAdministratorColumns = [
   },
 ];
 
-const requestQueueOthersColumns = [
-  {
-    field: 'received',
-    header: 'Received',
-    sortable: true,
-    component: markRaw(DataTableCellText),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      label: sp.data.received as string,
-    }),
-  },
-  {
-    field: 'type',
-    header: 'Type',
-    sortable: true,
-    component: markRaw(DataTableCellText),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      label: sp.data.type as string,
-    }),
-  },
-  {
-    field: 'name',
-    header: 'Name',
-    sortable: true,
-    component: markRaw(DataTableCellText),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      label: sp.data.name as string,
-    }),
-  },
-  {
-    field: 'requester',
-    header: 'Requester',
-    sortable: true,
-    component: markRaw(DataTableCellLink),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      label: sp.data.requester as string,
-      href: '#',
-    }),
-  },
-  {
-    field: 'department',
-    header: 'Department',
-    sortable: true,
-    component: markRaw(DataTableCellText),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      label: sp.data.department as string,
-    }),
-  },
-  {
-    field: 'approvalType',
-    header: 'Approval Mode',
-    sortable: true,
-    component: markRaw(DataTableCellText),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      label: sp.data.approvalType as string,
-    }),
-  },
+const requestQueueDelegatedColumns = [
+  ...requestQueueAdministratorColumns.slice(0, 6),
   {
     field: 'approvalProgressStatus',
     header: 'Progress',
@@ -709,16 +944,7 @@ const requestQueueOthersColumns = [
       totalApprovers: (sp.data.totalApprovers as number) ?? 1,
     }),
   },
-  {
-    field: 'status',
-    header: 'Status',
-    sortable: true,
-    component: markRaw(StatusCell),
-    componentProps: (sp: { data: Record<string, unknown> }) => ({
-      statusLabel: sp.data.status as string,
-      tokenMapping: statusTokenMapping,
-    }),
-  },
+  ...requestQueueAdministratorColumns.slice(6, 7),
   {
     field: 'actions',
     header: 'Actions',
@@ -726,6 +952,7 @@ const requestQueueOthersColumns = [
     componentProps: (sp: { data: Record<string, unknown> }) => ({
       status: sp.data.status as string,
       requestId: sp.data.id as number,
+      canAct: false,
     }),
   },
 ];
@@ -749,17 +976,20 @@ const basicFilters = [
     label: 'Type',
     type: 'multiSelect' as const,
     options: [
-      { label: 'Resource', value: 'Resource Approval' },
-      { label: 'Device Admin', value: 'Device Admin' },
+      { label: 'SSO application', value: 'SSO application' },
+      { label: 'Device group', value: 'Device group' },
+      { label: 'RADIUS', value: 'RADIUS' },
+      { label: 'Directory', value: 'Directory' },
+      { label: 'Device admin / sudo', value: 'Device admin / sudo' },
     ],
   },
   {
     id: 'approvalType',
-    label: 'Approval Type',
+    label: 'Approval type',
     type: 'multiSelect' as const,
     options: [
       { label: 'Manual', value: 'Manual' },
-      { label: 'Auto-Approval', value: 'Automatic' },
+      { label: 'Auto-approval', value: 'Automatic' },
     ],
   },
   {
@@ -767,15 +997,12 @@ const basicFilters = [
     label: 'Status',
     type: 'multiSelect' as const,
     options: [
-      { label: 'Active', value: 'Active' },
       { label: 'Pending', value: 'Pending' },
       { label: 'Approved', value: 'Approved' },
-      { label: 'Denied', value: 'Denied' },
-      { label: 'Deprovisioned', value: 'Deprovisioned' },
-      { label: 'Error', value: 'Error' },
+      { label: 'Granted', value: 'Granted' },
+      { label: 'Declined', value: 'Declined' },
       { label: 'Expired', value: 'Expired' },
-      { label: 'Canceled', value: 'Canceled' },
-      { label: 'Missing Data', value: 'Missing Data' },
+      { label: 'Error', value: 'Error' },
     ],
   },
 ];
@@ -792,34 +1019,99 @@ type ModalAppliedFilter = {
   value: string | string[] | { operator: string; value: string } | null;
 };
 
-const FILTER_ID_TO_KEY: Record<string, string> = {
-  requester: 'Requester',
-  received: 'Received',
-  type: 'Type',
-  approvalType: 'Approval Mode',
-  status: 'Status',
+type FilterMapConfig = {
+  idToKey: Record<string, string>;
+  keyToId: Record<string, string>;
+  multiSelectIds: Set<string>;
 };
 
-const FILTER_KEY_TO_ID: Record<string, string> = Object.fromEntries(
-  Object.entries(FILTER_ID_TO_KEY).map(([id, key]) => [key, id]),
-);
+const REQUEST_QUEUE_FILTER_MAP: FilterMapConfig = {
+  idToKey: {
+    requester: 'Requester',
+    received: 'Received',
+    type: 'Type',
+    approvalType: 'Approval mode',
+    status: 'Status',
+  },
+  keyToId: {
+    Requester: 'requester',
+    Received: 'received',
+    Type: 'type',
+    'Approval mode': 'approvalType',
+    Status: 'status',
+  },
+  multiSelectIds: new Set(['type', 'approvalType', 'status']),
+};
 
-const MULTI_SELECT_FILTER_IDS = new Set(['type', 'approvalType', 'status']);
+const APPROVAL_FLOW_FILTER_MAP: FilterMapConfig = {
+  idToKey: {
+    flowUserGroup: 'User group assignment',
+    flowType: 'Flow type',
+    flowApprovalMode: 'Approval mode',
+    flowStatus: 'Status',
+  },
+  keyToId: {
+    'User group assignment': 'flowUserGroup',
+    'Flow type': 'flowType',
+    'Approval mode': 'flowApprovalMode',
+    Status: 'flowStatus',
+  },
+  multiSelectIds: new Set(['flowType', 'flowApprovalMode', 'flowStatus']),
+};
 
-function chipsToModalFilters(chips: AppliedFilterChip[]): ModalAppliedFilter[] {
+const approvalFlowBasicFilters = [
+  {
+    id: 'flowUserGroup',
+    label: 'User group assignment',
+    type: 'text' as const,
+    placeholder: 'Search',
+  },
+  {
+    id: 'flowType',
+    label: 'Flow type',
+    type: 'multiSelect' as const,
+    options: [
+      { label: 'Device admin', value: 'Device admin' },
+      { label: 'Resource approval', value: 'Resource approval' },
+    ],
+  },
+  {
+    id: 'flowApprovalMode',
+    label: 'Approval mode',
+    type: 'multiSelect' as const,
+    options: [
+      { label: 'Manual', value: 'Manual' },
+      { label: 'Automatic', value: 'Automatic' },
+    ],
+  },
+  {
+    id: 'flowStatus',
+    label: 'Status',
+    type: 'multiSelect' as const,
+    options: [
+      { label: 'Enabled', value: 'Enabled' },
+      { label: 'Disabled', value: 'Disabled' },
+    ],
+  },
+];
+
+function chipsToModalFilters(
+  chips: AppliedFilterChip[],
+  config: FilterMapConfig = REQUEST_QUEUE_FILTER_MAP,
+): ModalAppliedFilter[] {
   const byId = new Map<string, ModalAppliedFilter>();
 
   for (const chip of chips) {
-    const id = FILTER_KEY_TO_ID[chip.key] ?? chip.id;
+    const id = config.keyToId[chip.key] ?? chip.id;
     if (!id) continue;
 
-    if (MULTI_SELECT_FILTER_IDS.has(id)) {
+    if (config.multiSelectIds.has(id)) {
       const existing = byId.get(id);
       const values =
         existing && Array.isArray(existing.value) ? [...existing.value] : [];
       values.push(chip.value);
       byId.set(id, { id, value: values });
-    } else if (id === 'requester' || id === 'received') {
+    } else {
       byId.set(id, {
         id,
         value: { operator: chip.operator || 'contains', value: chip.value },
@@ -830,12 +1122,15 @@ function chipsToModalFilters(chips: AppliedFilterChip[]): ModalAppliedFilter[] {
   return Array.from(byId.values());
 }
 
-function modalFiltersToChips(filters: ModalAppliedFilter[]): AppliedFilterChip[] {
+function modalFiltersToChips(
+  filters: ModalAppliedFilter[],
+  config: FilterMapConfig = REQUEST_QUEUE_FILTER_MAP,
+): AppliedFilterChip[] {
   const chips: AppliedFilterChip[] = [];
   let chipIndex = 0;
 
   for (const filter of filters) {
-    const key = FILTER_ID_TO_KEY[filter.id] ?? filter.id;
+    const key = config.idToKey[filter.id] ?? filter.id;
     if (filter.value === null || filter.value === undefined) continue;
 
     if (Array.isArray(filter.value)) {
@@ -890,19 +1185,19 @@ function parseIsoDate(value: string): Date | null {
 // ─── Main tabs and sub-tabs ───
 
 const mainTabs = [
-  { label: 'Request Queue (6)', value: 'request-queue' },
-  { label: 'Active Sessions (5)', value: 'active-sessions' },
-  { label: 'Approval Flows (5)', value: 'approval-flows' },
+  { label: 'Request queue (2)', value: 'request-queue' },
+  { label: 'Active sessions (5)', value: 'active-sessions' },
+  { label: 'Approval flows (5)', value: 'approval-flows' },
+];
+
+const requestQueueSubTabOptions = [
+  { label: 'Administrator', value: 'administrator' },
+  { label: 'Others', value: 'delegated' },
 ];
 
 const activeSessionsSubTabOptions = [
-  { label: 'Device Admin (2)', value: 'device-admin' },
-  { label: 'Timed Access (3)', value: 'timed-access' },
-];
-
-const subTabOptions = [
-  { label: 'Administrator', value: 'administrator' },
-  { label: 'Others', value: 'others' },
+  { label: 'Device admin (2)', value: 'device-admin' },
+  { label: 'Timed access (3)', value: 'timed-access' },
 ];
 
 // ─── Export options ───
@@ -915,29 +1210,49 @@ const exportOptions = [
 // ─── Initial active filters ───
 
 const initialFilters = [
-  { key: 'Approval Mode', operator: 'is', value: 'Manual', id: 'filter-1' },
-  { key: 'Status', operator: 'is', value: 'Pending', id: 'filter-2' },
-  { key: 'Status', operator: 'is', value: 'Error', id: 'filter-3' },
+  { key: 'Status', operator: 'is', value: 'Pending', id: 'filter-1' },
 ];
 
-function formatGroupedValues(values: string[], maxVisible = 2): string {
-  if (values.length <= maxVisible) return values.join(', ');
-  return `${values.slice(0, maxVisible).join(', ')}, +${values.length - maxVisible}`;
+function approvalFlowMatchesFilters(row: ApprovalFlowRow, filters: AppliedFilterChip[]): boolean {
+  if (!filters.length) return true;
+
+  const filtersByKey = new Map<string, { operator: string; value: string }[]>();
+  for (const filter of filters) {
+    if (!filtersByKey.has(filter.key)) filtersByKey.set(filter.key, []);
+    filtersByKey.get(filter.key)!.push({ operator: filter.operator, value: filter.value });
+  }
+
+  for (const [key, keyFilters] of filtersByKey) {
+    if (key === 'User group assignment') {
+      const search = keyFilters[0]?.value?.trim().toLowerCase() ?? '';
+      if (search && !row.userGroupAssignment.toLowerCase().includes(search)) return false;
+    } else if (key === 'Flow type') {
+      const values = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+      if (values.length && !values.includes(row.flowType)) return false;
+    } else if (key === 'Approval mode') {
+      const values = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+      if (values.length && !values.includes(row.approvalMode)) return false;
+    } else if (key === 'Status') {
+      const values = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+      const status = row.enabled ? 'Enabled' : 'Disabled';
+      if (values.length && !values.includes(status)) return false;
+    }
+  }
+
+  return true;
 }
 
-function sortedStringArrayEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort();
-  const sb = [...b].sort();
-  return sa.every((v, i) => v === sb[i]);
-}
+const activeSessionBulkActions: Action[] = [{ id: 'revoke', label: 'Revoke' }];
 
 // ─── Component ───
 
 const AccessRequestsListPage = defineComponent({
   name: 'AccessRequestsListPage',
   props: {
-    initialSubTab: { type: String as () => 'administrator' | 'others', default: 'administrator' },
+    initialRequestQueueSubTab: {
+      type: String as () => 'administrator' | 'delegated',
+      default: 'administrator',
+    },
     initialMainTab: {
       type: String as () => 'request-queue' | 'active-sessions' | 'approval-flows',
       default: 'request-queue',
@@ -954,6 +1269,7 @@ const AccessRequestsListPage = defineComponent({
     DataTableToolbar,
     FilterModal,
     FormField,
+    ActionsToolbar,
     TopBar,
     SelectButton,
     Button,
@@ -964,11 +1280,9 @@ const AccessRequestsListPage = defineComponent({
     IconField,
     InputIcon,
     InputText,
-    Select,
     Textarea,
     ArrowTopRightOnSquareIcon,
     CheckCircleIcon,
-    ChevronDownIcon,
     ClipboardDocumentCheckIcon,
     Cog6ToothIcon,
     Menu,
@@ -976,27 +1290,25 @@ const AccessRequestsListPage = defineComponent({
     ExclamationTriangleIcon,
     InformationCircleIcon,
     MagnifyingGlassIcon,
+    PlusIcon,
     XCircleIcon,
     XMarkIcon,
   },
   setup(props) {
     const requests = ref<AccessRequest[]>([...accessRequestsData]);
+    const delegatedRequests = ref<AccessRequest[]>([...delegatedRequestsData]);
+    const searchQuery = ref('');
     const showFilterModal = ref(false);
     const appliedFilters = ref<AppliedFilterChip[]>(initialFilters);
     const filterModalAppliedFilters = computed(() => chipsToModalFilters(appliedFilters.value));
     const activeMainTab = ref(props.initialMainTab);
-    const activeSubTab = ref(props.initialSubTab);
+    const activeRequestQueueSubTab = ref(props.initialRequestQueueSubTab);
     const activeSessionsSubTab = ref(props.initialActiveSessionsSubTab);
 
     const timedAccessRows = ref<TimedAccessSessionRow[]>([...timedAccessSessionsData]);
     const timedAccessSelection = ref<TimedAccessSessionRow[]>([]);
     const deviceAdminRows = ref<DeviceAdminSessionRow[]>(deviceAdminSessionsData.map((r) => ({ ...r })));
     const deviceAdminSelection = ref<DeviceAdminSessionRow[]>([]);
-    const activeSessionsActionsMenuRef = ref<InstanceType<typeof Menu> | null>(null);
-
-    function toggleActiveSessionsActionsMenu(event: Event) {
-      activeSessionsActionsMenuRef.value?.toggle(event);
-    }
 
     function handleActiveSessionsRefresh() {
       // Story placeholder
@@ -1013,19 +1325,11 @@ const AccessRequestsListPage = defineComponent({
       })),
     );
 
-    const showApprovalFlowFilterDialog = ref(false);
-    const appliedFlowUserGroupSearch = ref('');
-    const draftFlowUserGroupSearch = ref('');
-    const appliedFlowTypes = ref<string[]>([]);
-    const draftFlowTypes = ref<string[]>([]);
-    const appliedFlowApprovalModes = ref<string[]>([]);
-    const draftFlowApprovalModes = ref<string[]>([]);
-    const appliedFlowStatuses = ref<string[]>([]);
-    const draftFlowStatuses = ref<string[]>([]);
-
-    const approvalFlowFilterFlowTypes = ['Device Admin', 'Resource Approval'] as const;
-    const approvalFlowFilterApprovalModes = ['Manual', 'Automatic'] as const;
-    const approvalFlowFilterStatuses = ['Enabled', 'Disabled'] as const;
+    const showApprovalFlowFilterModal = ref(false);
+    const appliedApprovalFlowFilters = ref<AppliedFilterChip[]>([]);
+    const approvalFlowFilterModalAppliedFilters = computed(() =>
+      chipsToModalFilters(appliedApprovalFlowFilters.value, APPROVAL_FLOW_FILTER_MAP),
+    );
 
     const showDisableApprovalFlowDialog = ref(false);
     const disableApprovalFlowIdPending = ref<string | null>(null);
@@ -1057,91 +1361,93 @@ const AccessRequestsListPage = defineComponent({
       if (!open) disableApprovalFlowIdPending.value = null;
     });
 
-    const showGrantAccessDialog = ref(false);
-    const showDenyAccessDialog = ref(false);
+    const showApproveAccessDialog = ref(false);
+    const showDeclineAccessDialog = ref(false);
     const accessActionRequestIdPending = ref<number | null>(null);
-    const grantAccessDuration = ref(90);
-    const grantAccessMessage = ref('');
-    const denyAccessReason = ref('');
-    const denyAccessInternalNotes = ref('');
+    const approveAccessMessage = ref('');
+    const declineAccessReason = ref('');
+    const declineAccessInternalNotes = ref('');
 
-    const denyAccessConfirmDisabled = computed(() => !denyAccessReason.value.trim());
+    const declineAccessConfirmDisabled = computed(() => !declineAccessReason.value.trim());
 
-    const grantAccessExpirationLabel = computed(() =>
-      formatGrantAccessExpiration(grantAccessDuration.value),
-    );
+    const requestExpiryLabel = computed(() => formatRequestExpiryDate());
 
     const pendingAccessRequest = computed(() => {
       const id = accessActionRequestIdPending.value;
       if (id == null) return null;
-      return sourceData.value.find((r) => r.id === id) ?? null;
+      return requests.value.find((r) => r.id === id) ?? null;
     });
 
-    const grantAccessResourceName = computed(() => {
+    const approveAccessResourceName = computed(() => {
       const request = pendingAccessRequest.value;
       if (!request) return '';
       return request.approvalTitle || request.name;
     });
 
-    function updateRequestStatus(requestId: number, status: 'Approved' | 'Denied') {
-      const applyUpdate = (row: AccessRequest) => {
-        row.status = status;
-        row.approvalProgressStatus = status === 'Approved' ? 'Approved' : 'Denied';
-      };
+    function updateRequestStatus(requestId: number, status: 'Granted' | 'Declined') {
+      const row = requests.value.find((r) => r.id === requestId);
+      if (!row) return;
 
-      const administratorRow = requests.value.find((r) => r.id === requestId);
-      if (administratorRow) applyUpdate(administratorRow);
-
-      const othersRow = othersRequestsData.find((r) => r.id === requestId);
-      if (othersRow) applyUpdate(othersRow);
+      if (status === 'Granted') {
+        row.status = 'Granted';
+        row.approvalProgressStatus = 'Granted';
+        row.approver = 'Administrator';
+      } else {
+        row.status = 'Declined';
+        row.approvalProgressStatus = 'Declined';
+      }
     }
 
-    function openGrantAccessDialog(requestId: number) {
+    const isDelegatedQueueView = computed(() => activeRequestQueueSubTab.value === 'delegated');
+
+    const queueSourceData = computed(() =>
+      isDelegatedQueueView.value ? delegatedRequests.value : requests.value,
+    );
+
+    function openApproveAccessDialog(requestId: number) {
       accessActionRequestIdPending.value = requestId;
-      grantAccessMessage.value = '';
-      const request =
-        requests.value.find((r) => r.id === requestId) ??
-        othersRequestsData.find((r) => r.id === requestId);
-      grantAccessDuration.value = parseDurationDays(request?.duration);
-      showGrantAccessDialog.value = true;
+      approveAccessMessage.value = '';
+      showApproveAccessDialog.value = true;
     }
 
-    function openDenyAccessDialog(requestId: number) {
+    function openDeclineAccessDialog(requestId: number) {
       accessActionRequestIdPending.value = requestId;
-      denyAccessReason.value = '';
-      denyAccessInternalNotes.value = '';
-      showDenyAccessDialog.value = true;
+      declineAccessReason.value = '';
+      declineAccessInternalNotes.value = '';
+      showDeclineAccessDialog.value = true;
     }
 
-    function closeGrantAccessDialog() {
-      showGrantAccessDialog.value = false;
+    function closeApproveAccessDialog() {
+      showApproveAccessDialog.value = false;
     }
 
-    function closeDenyAccessDialog() {
-      showDenyAccessDialog.value = false;
+    function closeDeclineAccessDialog() {
+      showDeclineAccessDialog.value = false;
     }
 
-    function confirmGrantAccess() {
+    function confirmApproveAccess() {
       const id = accessActionRequestIdPending.value;
-      if (id != null) updateRequestStatus(id, 'Approved');
-      grantAccessMessage.value = '';
-      showGrantAccessDialog.value = false;
+      if (id != null) updateRequestStatus(id, 'Granted');
+      approveAccessMessage.value = '';
+      showApproveAccessDialog.value = false;
     }
 
-    function confirmDenyAccess() {
+    function confirmDeclineAccess() {
       const id = accessActionRequestIdPending.value;
-      if (id != null && denyAccessReason.value.trim()) updateRequestStatus(id, 'Denied');
-      denyAccessReason.value = '';
-      denyAccessInternalNotes.value = '';
-      showDenyAccessDialog.value = false;
+      if (id != null && declineAccessReason.value.trim()) updateRequestStatus(id, 'Declined');
+      declineAccessReason.value = '';
+      declineAccessInternalNotes.value = '';
+      showDeclineAccessDialog.value = false;
     }
 
-    watch([showGrantAccessDialog, showDenyAccessDialog], ([grantOpen, denyOpen]) => {
-      if (!grantOpen && !denyOpen) accessActionRequestIdPending.value = null;
+    watch([showApproveAccessDialog, showDeclineAccessDialog], ([approveOpen, declineOpen]) => {
+      if (!approveOpen && !declineOpen) accessActionRequestIdPending.value = null;
     });
 
     const showRevokeTimedAccessDialog = ref(false);
+    const revokeTimedAccessBulkMode = ref(false);
     const revokeTimedAccessSessionIdPending = ref<string | null>(null);
+    const revokeTimedAccessPendingIds = ref<string[]>([]);
 
     const pendingRevokeTimedAccessSession = computed(() => {
       const id = revokeTimedAccessSessionIdPending.value;
@@ -1164,7 +1470,16 @@ const AccessRequestsListPage = defineComponent({
     );
 
     function openRevokeTimedAccessDialog(sessionId: string) {
+      revokeTimedAccessBulkMode.value = false;
       revokeTimedAccessSessionIdPending.value = sessionId;
+      revokeTimedAccessPendingIds.value = [sessionId];
+      showRevokeTimedAccessDialog.value = true;
+    }
+
+    function openRevokeTimedAccessBulkDialog() {
+      revokeTimedAccessBulkMode.value = true;
+      revokeTimedAccessSessionIdPending.value = null;
+      revokeTimedAccessPendingIds.value = timedAccessSelection.value.map((row) => row.id);
       showRevokeTimedAccessDialog.value = true;
     }
 
@@ -1173,16 +1488,52 @@ const AccessRequestsListPage = defineComponent({
     }
 
     function confirmRevokeTimedAccess() {
-      const id = revokeTimedAccessSessionIdPending.value;
-      if (id) {
-        timedAccessRows.value = timedAccessRows.value.filter((row) => row.id !== id);
+      const idsToRemove = revokeTimedAccessBulkMode.value
+        ? revokeTimedAccessPendingIds.value
+        : revokeTimedAccessSessionIdPending.value
+          ? [revokeTimedAccessSessionIdPending.value]
+          : [];
+
+      if (idsToRemove.length) {
+        const idSet = new Set(idsToRemove);
+        timedAccessRows.value = timedAccessRows.value.filter((row) => !idSet.has(row.id));
+        timedAccessSelection.value = timedAccessSelection.value.filter((row) => !idSet.has(row.id));
       }
       showRevokeTimedAccessDialog.value = false;
     }
 
     watch(showRevokeTimedAccessDialog, (open) => {
-      if (!open) revokeTimedAccessSessionIdPending.value = null;
+      if (!open) {
+        revokeTimedAccessBulkMode.value = false;
+        revokeTimedAccessSessionIdPending.value = null;
+        revokeTimedAccessPendingIds.value = [];
+      }
     });
+
+    const timedAccessToolbarSelectedItems = computed<SelectedItem[]>(() =>
+      timedAccessSelection.value.map((row) => ({
+        id: row.id,
+        label: row.user,
+        description: `${row.approvalFlow} • ${row.timeRemainingLabel}`,
+      })),
+    );
+
+    function applyTimedAccessBulkAction(action: Action) {
+      if (action.id !== 'revoke' || timedAccessSelection.value.length === 0) return;
+      if (timedAccessSelection.value.length === 1) {
+        openRevokeTimedAccessDialog(timedAccessSelection.value[0].id);
+      } else {
+        openRevokeTimedAccessBulkDialog();
+      }
+    }
+
+    function handleTimedAccessDeselect(item: SelectedItem) {
+      timedAccessSelection.value = timedAccessSelection.value.filter((row) => row.id !== item.id);
+    }
+
+    function clearTimedAccessSelection() {
+      timedAccessSelection.value = [];
+    }
 
     const showRevokeDeviceAdminDialog = ref(false);
     const revokeDeviceAdminBulkMode = ref(false);
@@ -1258,31 +1609,30 @@ const AccessRequestsListPage = defineComponent({
       }
     });
 
-    const activeSessionsActionsMenuItems = computed(() => {
-      const singleTimedAccessSelected = timedAccessSelection.value.length === 1;
-      const deviceAdminSelectedCount = deviceAdminSelection.value.length;
+    const deviceAdminToolbarSelectedItems = computed<SelectedItem[]>(() =>
+      deviceAdminSelection.value.map((row) => ({
+        id: row.id,
+        label: row.user,
+        description: `${row.device} • ${row.os}`,
+      })),
+    );
 
-      return [
-        {
-          label: 'Revoke',
-          disabled:
-            activeSessionsSubTab.value === 'timed-access'
-              ? !singleTimedAccessSelected
-              : activeSessionsSubTab.value === 'device-admin'
-                ? deviceAdminSelectedCount === 0
-                : true,
-          command: () => {
-            if (activeSessionsSubTab.value === 'timed-access' && singleTimedAccessSelected) {
-              openRevokeTimedAccessDialog(timedAccessSelection.value[0].id);
-            } else if (activeSessionsSubTab.value === 'device-admin' && deviceAdminSelectedCount === 1) {
-              openRevokeDeviceAdminDialog(deviceAdminSelection.value[0].id);
-            } else if (activeSessionsSubTab.value === 'device-admin' && deviceAdminSelectedCount > 1) {
-              openRevokeDeviceAdminBulkDialog();
-            }
-          },
-        },
-      ];
-    });
+    function applyDeviceAdminBulkAction(action: Action) {
+      if (action.id !== 'revoke' || deviceAdminSelection.value.length === 0) return;
+      if (deviceAdminSelection.value.length === 1) {
+        openRevokeDeviceAdminDialog(deviceAdminSelection.value[0].id);
+      } else {
+        openRevokeDeviceAdminBulkDialog();
+      }
+    }
+
+    function handleDeviceAdminDeselect(item: SelectedItem) {
+      deviceAdminSelection.value = deviceAdminSelection.value.filter((row) => row.id !== item.id);
+    }
+
+    function clearDeviceAdminSelection() {
+      deviceAdminSelection.value = [];
+    }
 
     const approvalFlowColumns = [
       {
@@ -1296,7 +1646,7 @@ const AccessRequestsListPage = defineComponent({
       },
       {
         field: 'flowType',
-        header: 'Flow Type',
+        header: 'Flow type',
         sortable: true,
         component: markRaw(DataTableCellText),
         componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -1305,11 +1655,11 @@ const AccessRequestsListPage = defineComponent({
       },
       {
         field: 'userGroupAssignment',
-        header: 'User Group Assignment',
+        header: 'User group assignment',
         sortable: true,
         component: markRaw(DataTableCellText),
         componentProps: (sp: { data: Record<string, unknown> }) => {
-          if (sp.data.flowType === 'Device Admin') {
+          if (sp.data.flowType === 'Device admin') {
             return { label: '--' };
           }
           const raw = sp.data.userGroupAssignment as string;
@@ -1318,7 +1668,7 @@ const AccessRequestsListPage = defineComponent({
       },
       {
         field: 'approvalMode',
-        header: 'Approval Mode',
+        header: 'Approval mode',
         sortable: true,
         component: markRaw(DataTableCellText),
         componentProps: (sp: { data: Record<string, unknown> }) => ({
@@ -1344,142 +1694,55 @@ const AccessRequestsListPage = defineComponent({
       },
     ];
 
-    const filteredApprovalFlows = computed(() => {
-      let rows = approvalFlowsData.value;
-      const q = appliedFlowUserGroupSearch.value.trim().toLowerCase();
-      if (q) {
-        rows = rows.filter((r) => r.userGroupAssignment.toLowerCase().includes(q));
-      }
-      if (appliedFlowTypes.value.length) {
-        rows = rows.filter((r) => appliedFlowTypes.value.includes(r.flowType));
-      }
-      if (appliedFlowApprovalModes.value.length) {
-        rows = rows.filter((r) => appliedFlowApprovalModes.value.includes(r.approvalMode));
-      }
-      if (appliedFlowStatuses.value.length) {
-        rows = rows.filter((r) =>
-          appliedFlowStatuses.value.includes(r.enabled ? 'Enabled' : 'Disabled'),
-        );
-      }
-      return rows;
-    });
+    const filteredApprovalFlows = computed(() =>
+      approvalFlowsData.value.filter((row) =>
+        approvalFlowMatchesFilters(row, appliedApprovalFlowFilters.value),
+      ),
+    );
 
     const approvalFlowsTotalRecords = computed(() => filteredApprovalFlows.value.length);
 
-    const activeApprovalFlowFilterChips = computed(() => {
-      const chips: { id: string; key: string; operator: string; value: string }[] = [];
-      const search = appliedFlowUserGroupSearch.value.trim();
-      if (search) {
-        chips.push({
-          id: 'flowUserGroup',
-          key: 'User Group Assignment',
-          operator: 'contains',
-          value: search,
-        });
-      }
-      if (appliedFlowTypes.value.length) {
-        chips.push({
-          id: 'flowType',
-          key: 'Flow Type',
-          operator: 'is',
-          value: formatGroupedValues(appliedFlowTypes.value),
-        });
-      }
-      if (appliedFlowApprovalModes.value.length) {
-        chips.push({
-          id: 'flowApprovalMode',
-          key: 'Approval Mode',
-          operator: 'is',
-          value: formatGroupedValues(appliedFlowApprovalModes.value),
-        });
-      }
-      if (appliedFlowStatuses.value.length) {
-        chips.push({
-          id: 'flowStatus',
-          key: 'Status',
-          operator: 'is',
-          value: formatGroupedValues(appliedFlowStatuses.value),
-        });
-      }
-      return chips;
-    });
-
-    const approvalFlowFilterApplyDisabled = computed(
-      () =>
-        draftFlowUserGroupSearch.value.trim() === appliedFlowUserGroupSearch.value.trim() &&
-        sortedStringArrayEqual(draftFlowTypes.value, appliedFlowTypes.value) &&
-        sortedStringArrayEqual(draftFlowApprovalModes.value, appliedFlowApprovalModes.value) &&
-        sortedStringArrayEqual(draftFlowStatuses.value, appliedFlowStatuses.value),
-    );
-
-    function openApprovalFlowFilterDialog() {
-      draftFlowUserGroupSearch.value = appliedFlowUserGroupSearch.value;
-      draftFlowTypes.value = [...appliedFlowTypes.value];
-      draftFlowApprovalModes.value = [...appliedFlowApprovalModes.value];
-      draftFlowStatuses.value = [...appliedFlowStatuses.value];
-      showApprovalFlowFilterDialog.value = true;
+    function handleApprovalFlowFilter() {
+      showApprovalFlowFilterModal.value = true;
     }
 
-    function applyApprovalFlowFilters() {
-      appliedFlowUserGroupSearch.value = draftFlowUserGroupSearch.value;
-      appliedFlowTypes.value = [...draftFlowTypes.value];
-      appliedFlowApprovalModes.value = [...draftFlowApprovalModes.value];
-      appliedFlowStatuses.value = [...draftFlowStatuses.value];
-      showApprovalFlowFilterDialog.value = false;
+    function handleApprovalFlowFilterApply(filters: ModalAppliedFilter[]) {
+      appliedApprovalFlowFilters.value = modalFiltersToChips(filters, APPROVAL_FLOW_FILTER_MAP);
+      showApprovalFlowFilterModal.value = false;
     }
 
-    function cancelApprovalFlowFilterDialog() {
-      showApprovalFlowFilterDialog.value = false;
+    function handleApprovalFlowFilterClearAll() {
+      appliedApprovalFlowFilters.value = [];
+      showApprovalFlowFilterModal.value = false;
     }
 
-    function clearDraftApprovalFlowFilters() {
-      draftFlowUserGroupSearch.value = '';
-      draftFlowTypes.value = [];
-      draftFlowApprovalModes.value = [];
-      draftFlowStatuses.value = [];
+    function handleApprovalFlowFilterRemove(filter: {
+      id?: string | number;
+      key: string;
+      operator?: string;
+      value?: string;
+    }) {
+      const hasId = filter.id != null && String(filter.id) !== '';
+      appliedApprovalFlowFilters.value = appliedApprovalFlowFilters.value.filter((f) => {
+        if (hasId) {
+          return f.id !== filter.id;
+        }
+        if (filter.value !== undefined) {
+          const op = filter.operator ?? 'is';
+          return !(f.key === filter.key && f.operator === op && f.value === filter.value);
+        }
+        return f.key !== filter.key;
+      });
     }
 
     function clearAllApprovalFlowFilters() {
-      appliedFlowUserGroupSearch.value = '';
-      appliedFlowTypes.value = [];
-      appliedFlowApprovalModes.value = [];
-      appliedFlowStatuses.value = [];
+      appliedApprovalFlowFilters.value = [];
     }
-
-    function removeApprovalFlowFilterChip(chip: { id?: string }) {
-      const chipId = chip.id ?? '';
-      if (chipId === 'flowUserGroup') appliedFlowUserGroupSearch.value = '';
-      else if (chipId === 'flowType') appliedFlowTypes.value = [];
-      else if (chipId === 'flowApprovalMode') appliedFlowApprovalModes.value = [];
-      else if (chipId === 'flowStatus') appliedFlowStatuses.value = [];
-    }
-
-    function toggleDraftFlowType(value: string) {
-      const cur = draftFlowTypes.value;
-      draftFlowTypes.value = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
-    }
-
-    function toggleDraftFlowApprovalMode(value: string) {
-      const cur = draftFlowApprovalModes.value;
-      draftFlowApprovalModes.value = cur.includes(value)
-        ? cur.filter((v) => v !== value)
-        : [...cur, value];
-    }
-
-    function toggleDraftFlowStatus(value: string) {
-      const cur = draftFlowStatuses.value;
-      draftFlowStatuses.value = cur.includes(value)
-        ? cur.filter((v) => v !== value)
-        : [...cur, value];
-    }
-
-    const sourceData = computed(() =>
-      activeSubTab.value === 'others' ? othersRequestsData : requests.value,
-    );
 
     const columns = computed(() => {
-      const baseColumns =
-        activeSubTab.value === 'others' ? requestQueueOthersColumns : requestQueueAdministratorColumns;
+      const baseColumns = isDelegatedQueueView.value
+        ? requestQueueDelegatedColumns
+        : requestQueueAdministratorColumns;
 
       return baseColumns.map((column) => {
         if (column.field !== 'actions') return column;
@@ -1489,19 +1752,17 @@ const AccessRequestsListPage = defineComponent({
           componentProps: (sp: { data: Record<string, unknown> }) => ({
             status: sp.data.status as string,
             requestId: sp.data.id as number,
-            onGrantAccess: openGrantAccessDialog,
-            onDenyAccess: openDenyAccessDialog,
+            canAct: !isDelegatedQueueView.value,
+            onApproveAccess: openApproveAccessDialog,
+            onDeclineAccess: openDeclineAccessDialog,
           }),
         };
       });
     });
 
-    const currentPageData = computed(() => {
-      const filters = appliedFilters.value;
-      const data = sourceData.value;
-      if (!filters.length) return data;
+    function requestMatchesFilters(row: AccessRequest, filters: AppliedFilterChip[]): boolean {
+      if (!filters.length) return true;
 
-      // Group filters by key (OR within same key, AND between keys)
       const filtersByKey = new Map<string, { operator: string; value: string }[]>();
       for (const f of filters) {
         const key = f.key;
@@ -1509,61 +1770,79 @@ const AccessRequestsListPage = defineComponent({
         filtersByKey.get(key)!.push({ operator: f.operator, value: f.value });
       }
 
-      return data.filter((r) => {
-        for (const [key, keyFilters] of filtersByKey) {
-          if (key === 'Status') {
-            const statusValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
-            if (statusValues.length && !statusValues.includes(r.status)) return false;
-          } else if (key === 'Requester') {
-            const reqFilter = keyFilters[0];
-            if (reqFilter?.value) {
-              const search = reqFilter.value.toLowerCase();
-              const requester = r.requester.toLowerCase();
-              if (reqFilter.operator === 'equals' && requester !== search) return false;
-              if (reqFilter.operator === 'notEquals' && requester === search) return false;
-              if (reqFilter.operator === 'startsWith' && !requester.startsWith(search)) return false;
-              if (reqFilter.operator === 'endsWith' && !requester.endsWith(search)) return false;
-              if (reqFilter.operator === 'notContains' && requester.includes(search)) return false;
-              if (
-                (reqFilter.operator === 'contains' || reqFilter.operator === 'is') &&
-                !requester.includes(search)
-              ) {
-                return false;
-              }
+      for (const [key, keyFilters] of filtersByKey) {
+        if (key === 'Status') {
+          const statusValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+          if (statusValues.length && !statusValues.includes(row.status)) return false;
+        } else if (key === 'Requester') {
+          const reqFilter = keyFilters[0];
+          if (reqFilter?.value) {
+            const search = reqFilter.value.toLowerCase();
+            const requester = row.requester.toLowerCase();
+            if (reqFilter.operator === 'equals' && requester !== search) return false;
+            if (reqFilter.operator === 'notEquals' && requester === search) return false;
+            if (reqFilter.operator === 'startsWith' && !requester.startsWith(search)) return false;
+            if (reqFilter.operator === 'endsWith' && !requester.endsWith(search)) return false;
+            if (reqFilter.operator === 'notContains' && requester.includes(search)) return false;
+            if (
+              (reqFilter.operator === 'contains' || reqFilter.operator === 'is') &&
+              !requester.includes(search)
+            ) {
+              return false;
             }
-          } else if (key === 'Type') {
-            const typeValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
-            if (typeValues.length && !typeValues.includes(r.type)) return false;
-          } else if (key === 'Approval Mode') {
-            const approvalValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
-            if (approvalValues.length && !approvalValues.includes(r.approvalType)) return false;
-          } else if (key === 'Received') {
-            const dateFilter = keyFilters[0];
-            if (dateFilter?.value) {
-              const receivedDate = parseReceivedDate(r.received);
-              const filterDate = parseIsoDate(dateFilter.value);
-              if (receivedDate && filterDate) {
-                if (dateFilter.operator === 'isBefore') {
-                  const receivedDay = new Date(
-                    receivedDate.getFullYear(),
-                    receivedDate.getMonth(),
-                    receivedDate.getDate(),
-                  );
-                  if (receivedDay >= filterDate) return false;
-                }
-                if (dateFilter.operator === 'isAfter') {
-                  const receivedDay = new Date(
-                    receivedDate.getFullYear(),
-                    receivedDate.getMonth(),
-                    receivedDate.getDate(),
-                  );
-                  if (receivedDay <= filterDate) return false;
-                }
+          }
+        } else if (key === 'Type') {
+          const typeValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+          if (typeValues.length && !typeValues.includes(row.type)) return false;
+        } else if (key === 'Approval mode') {
+          const approvalValues = keyFilters.filter((f) => f.operator === 'is').map((f) => f.value);
+          if (approvalValues.length && !approvalValues.includes(row.approvalType)) return false;
+        } else if (key === 'Received') {
+          const dateFilter = keyFilters[0];
+          if (dateFilter?.value) {
+            const receivedDate = parseReceivedDate(row.received);
+            const filterDate = parseIsoDate(dateFilter.value);
+            if (receivedDate && filterDate) {
+              if (dateFilter.operator === 'isBefore') {
+                const receivedDay = new Date(
+                  receivedDate.getFullYear(),
+                  receivedDate.getMonth(),
+                  receivedDate.getDate(),
+                );
+                if (receivedDay >= filterDate) return false;
+              }
+              if (dateFilter.operator === 'isAfter') {
+                const receivedDay = new Date(
+                  receivedDate.getFullYear(),
+                  receivedDate.getMonth(),
+                  receivedDate.getDate(),
+                );
+                if (receivedDay <= filterDate) return false;
               }
             }
           }
         }
-        return true;
+      }
+      return true;
+    }
+
+    const currentPageData = computed(() => {
+      const query = searchQuery.value.trim().toLowerCase();
+      return queueSourceData.value.filter((row) => {
+        if (!requestMatchesFilters(row, appliedFilters.value)) return false;
+        if (!query) return true;
+        const haystack = [
+          row.name,
+          row.requester,
+          row.department,
+          row.type,
+          row.status,
+          row.accessGroup,
+          row.approvalTitle,
+        ]
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
       });
     });
     const totalRecords = computed(() => currentPageData.value.length);
@@ -1581,8 +1860,8 @@ const AccessRequestsListPage = defineComponent({
       shouldShowTablePaginator(approvalFlowsTotalRecords.value),
     );
 
-    function handleSearch(_query: string) {
-      // Placeholder for search
+    function handleSearch(query: string) {
+      searchQuery.value = query;
     }
 
     function handleFilter() {
@@ -1638,12 +1917,28 @@ const AccessRequestsListPage = defineComponent({
       // Placeholder
     }
 
-    function handleApprovalFlowFilter() {
-      openApprovalFlowFilterDialog();
+    const addApprovalFlowMenuRef = ref<InstanceType<typeof Menu> | null>(null);
+
+    const addApprovalFlowMenuItems = [
+      {
+        label: 'Resource request',
+        command: () => handleAddApprovalFlow('Resource approval'),
+      },
+      {
+        label: 'Device admin',
+        command: () => handleAddApprovalFlow('Device admin'),
+      },
+    ];
+
+    function toggleAddApprovalFlowMenu(event: Event) {
+      addApprovalFlowMenuRef.value?.toggle(event);
     }
 
-    function handleAddApprovalFlow() {
-      // Placeholder
+    function handleAddApprovalFlow(flowType: 'Resource approval' | 'Device admin') {
+      if (flowType === 'Resource approval') {
+        navigateToStorybookStory(ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH);
+      }
+      // Device admin create flow — placeholder
     }
 
     function navigateToSettings() {
@@ -1701,9 +1996,10 @@ const AccessRequestsListPage = defineComponent({
       appliedFilters,
       filterModalAppliedFilters,
       mainTabs,
-      subTabOptions,
+      requestQueueSubTabOptions,
+      activeRequestQueueSubTab,
+      isDelegatedQueueView,
       activeMainTab,
-      activeSubTab,
       activeSessionsSubTab,
       activeSessionsSubTabOptions,
       timedAccessRows,
@@ -1712,9 +2008,15 @@ const AccessRequestsListPage = defineComponent({
       deviceAdminRows,
       deviceAdminColumnsWithActions,
       deviceAdminSelection,
-      activeSessionsActionsMenuRef,
-      activeSessionsActionsMenuItems,
-      toggleActiveSessionsActionsMenu,
+      activeSessionBulkActions,
+      timedAccessToolbarSelectedItems,
+      deviceAdminToolbarSelectedItems,
+      applyTimedAccessBulkAction,
+      applyDeviceAdminBulkAction,
+      handleTimedAccessDeselect,
+      handleDeviceAdminDeselect,
+      clearTimedAccessSelection,
+      clearDeviceAdminSelection,
       handleActiveSessionsRefresh,
       handleActiveSessionsSearch,
       exportOptions,
@@ -1732,47 +2034,40 @@ const AccessRequestsListPage = defineComponent({
       approvalFlowsTotalRecords,
       handleApprovalFlowSearch,
       handleApprovalFlowFilter,
+      addApprovalFlowMenuRef,
+      addApprovalFlowMenuItems,
+      toggleAddApprovalFlowMenu,
       handleAddApprovalFlow,
-      showApprovalFlowFilterDialog,
-      activeApprovalFlowFilterChips,
-      approvalFlowFilterApplyDisabled,
-      draftFlowUserGroupSearch,
-      draftFlowTypes,
-      draftFlowApprovalModes,
-      draftFlowStatuses,
-      approvalFlowFilterFlowTypes,
-      approvalFlowFilterApprovalModes,
-      approvalFlowFilterStatuses,
-      applyApprovalFlowFilters,
-      cancelApprovalFlowFilterDialog,
-      clearDraftApprovalFlowFilters,
+      showApprovalFlowFilterModal,
+      approvalFlowBasicFilters,
+      appliedApprovalFlowFilters,
+      approvalFlowFilterModalAppliedFilters,
+      handleApprovalFlowFilterApply,
+      handleApprovalFlowFilterClearAll,
+      handleApprovalFlowFilterRemove,
       clearAllApprovalFlowFilters,
-      removeApprovalFlowFilterChip,
-      toggleDraftFlowType,
-      toggleDraftFlowApprovalMode,
-      toggleDraftFlowStatus,
       navigateToSettings,
       showDisableApprovalFlowDialog,
       closeDisableApprovalFlowDialog,
       confirmDisableApprovalFlow,
-      showGrantAccessDialog,
-      showDenyAccessDialog,
+      showApproveAccessDialog,
+      showDeclineAccessDialog,
       pendingAccessRequest,
-      grantAccessDurationOptions,
-      grantAccessDuration,
-      grantAccessMessage,
-      grantAccessExpirationLabel,
-      grantAccessResourceName,
-      denyAccessReason,
-      denyAccessInternalNotes,
-      denyAccessConfirmDisabled,
-      openGrantAccessDialog,
-      openDenyAccessDialog,
-      closeGrantAccessDialog,
-      closeDenyAccessDialog,
-      confirmGrantAccess,
-      confirmDenyAccess,
+      approveAccessMessage,
+      approveAccessResourceName,
+      requestExpiryLabel,
+      declineAccessReason,
+      declineAccessInternalNotes,
+      declineAccessConfirmDisabled,
+      openApproveAccessDialog,
+      openDeclineAccessDialog,
+      closeApproveAccessDialog,
+      closeDeclineAccessDialog,
+      confirmApproveAccess,
+      confirmDeclineAccess,
       showRevokeTimedAccessDialog,
+      revokeTimedAccessBulkMode,
+      revokeTimedAccessPendingIds,
       pendingRevokeTimedAccessSession,
       closeRevokeTimedAccessDialog,
       confirmRevokeTimedAccess,
@@ -1799,7 +2094,7 @@ const AccessRequestsListPage = defineComponent({
         <div class="flex min-h-0 h-full w-full min-w-0 flex-[1_1_0] flex-col">
         <PageHeader
           class="shrink-0"
-          title="Access Requests"
+          title="Access requests"
           :tabs="mainTabs"
           :activeTab="activeMainTab"
           @update:activeTab="activeMainTab = $event"
@@ -1817,15 +2112,21 @@ const AccessRequestsListPage = defineComponent({
         </PageHeader>
 
         <div v-if="activeMainTab === 'request-queue'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-y-auto bg-neutral-surface px-6 pb-6">
-          <!-- Sub-tabs: Administrator / Others (matches Device Detail pattern) -->
           <div class="flex w-full min-w-0 items-center justify-between mb-4 pt-6">
             <SelectButton
-              v-model="activeSubTab"
-              :options="subTabOptions"
+              v-model="activeRequestQueueSubTab"
+              :options="requestQueueSubTabOptions"
               optionLabel="label"
               optionValue="value"
             />
           </div>
+
+          <MessageNotification
+            v-if="isDelegatedQueueView"
+            severity="info"
+            detail="Delegated approvals are actioned by non-admin approvers in the user portal. This view is monitor-only for administrators."
+            class="mb-4"
+          />
 
           <!-- DataTableToolbar (outside DataTable - Circuit DataTable does not support #toolbar slot) -->
           <div class="shrink-0 w-full min-w-0 pb-4">
@@ -1846,7 +2147,7 @@ const AccessRequestsListPage = defineComponent({
               @refresh="handleRefresh"
               @export-select="handleExportSelect"
             >
-              <template #saved-views>
+              <template #right-section>
                 <span class="text-body-sm text-neutral-subtle">Last refreshed an hour ago</span>
               </template>
             </DataTableToolbar>
@@ -1880,32 +2181,27 @@ const AccessRequestsListPage = defineComponent({
             >
             <template #expansion="{ data }">
               <div class="box-border border-t border-neutral-default_solid bg-neutral-surface px-md py-5">
-                <!-- Error: Approval flow changed during execution -->
+                <!-- Error state -->
                 <div
                   v-if="data.status === 'Error'"
                   class="flex max-w-2xl items-start gap-3 rounded-lg border border-error-base/30 bg-feedback-error-surface p-4"
                 >
                   <ExclamationTriangleIcon class="size-6 shrink-0 text-error-base" aria-hidden="true" />
                   <p class="text-body-md text-neutral-base">
-                    Changes to the approval flow were made during the execution of the approval process. This request is no longer valid and must be re-requested by the end user.
+                    {{ data.errorReason || 'This request encountered an error and must be re-requested by the end user after the workflow configuration is corrected.' }}
                   </p>
                 </div>
 
-                <!-- Approval flow visual (hidden for Error — replaced by error message above) -->
                 <div v-if="data.status !== 'Error'" class="flex max-w-4xl flex-col gap-6">
-                <!-- Header: App icon + Title or Approval Flow Description -->
                 <div class="flex items-center gap-3">
                   <div class="size-8 shrink-0 rounded flex items-center justify-center bg-info-surface border border-info-base/20">
                     <span class="text-body-sm font-bold text-info-base">{{ data.name?.charAt(0) || '?' }}</span>
                   </div>
                   <div class="flex flex-col gap-1 min-w-0">
-                    <span v-if="data.approvalFlowDescription" class="text-heading-4 text-neutral-base line-clamp-2">{{ data.approvalFlowDescription }}</span>
-                    <span v-else class="text-heading-4 text-neutral-base">{{ data.approvalTitle }}</span>
-                    <LinkText v-if="data.approvalFlowDescription" label="Show More" href="#" class="text-body-md shrink-0" />
+                    <span class="text-heading-4 text-neutral-base">{{ data.approvalTitle }}</span>
                   </div>
                 </div>
 
-                <!-- Request Details (2-column grid with vertical label/value pairs) -->
                 <div class="grid grid-cols-1 gap-y-5 sm:grid-cols-2 sm:gap-x-20 sm:gap-y-5">
                   <div class="flex min-w-0 flex-col gap-1">
                     <span class="text-body-md-semi-bold text-neutral-base">Requester</span>
@@ -1913,28 +2209,25 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                   <div class="flex min-w-0 flex-col gap-1">
                     <span class="text-body-md-semi-bold text-neutral-base">Manager</span>
-                    <span
-                      v-if="data.manager === 'Not Provided' || !data.manager"
-                      class="text-body-md text-error-base"
-                    >{{ data.manager || 'Not Provided' }}</span>
-                    <LinkText v-else :label="data.manager" href="#" class="text-body-md" />
+                    <LinkText :label="data.manager" href="#" class="text-body-md" />
                   </div>
                   <div class="flex min-w-0 flex-col gap-1">
-                    <span class="text-body-md-semi-bold text-neutral-base">Duration</span>
-                    <span class="text-body-md text-neutral-base">
-                      {{ (data.manager === 'Not Provided' || !data.manager || data.status === 'Missing Data') ? 'N/A' : data.duration }}
-                    </span>
+                    <span class="text-body-md-semi-bold text-neutral-base">Access group</span>
+                    <LinkText :label="data.accessGroup" href="#" class="text-body-md" />
                   </div>
                   <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-body-md-semi-bold text-neutral-base">Request expires</span>
+                    <span class="text-body-md text-neutral-base">30 days from submission if not completed</span>
+                  </div>
+                  <div class="flex min-w-0 flex-col gap-1 sm:col-span-2">
                     <span class="text-body-md-semi-bold text-neutral-base">Reason for Request</span>
                     <span class="text-body-md text-neutral-base">{{ data.reasonForRequest }}</span>
                   </div>
                 </div>
 
-                <!-- Approval Progress: Multi-step for Missing Data, single for others -->
                 <div class="flex flex-col gap-4 border-t border-neutral-default_solid pt-6">
-                  <span class="text-body-md-semi-bold text-neutral-base">Approval Progress</span>
-                  <template v-if="data.status === 'Missing Data' && data.approvalSteps?.length">
+                  <span class="text-body-md-semi-bold text-neutral-base">Approval progress</span>
+                  <template v-if="data.approvalSteps?.length">
                     <div
                       v-for="(step, idx) in data.approvalSteps"
                       :key="idx"
@@ -1944,39 +2237,32 @@ const AccessRequestsListPage = defineComponent({
                         class="flex shrink-0 items-center justify-center rounded-full border-2"
                         :class="[
                           step.type === 'pending' ? 'h-[22px] w-[22px]' : 'size-6',
-                          step.type === 'actionRequired'
-                            ? 'border-error-base bg-error-base'
-                            : step.type === 'approved'
-                              ? 'border-success-base bg-success-base'
+                          step.type === 'approved'
+                            ? 'border-success-base bg-success-base'
+                            : step.type === 'declined'
+                              ? 'border-error-base bg-error-base'
                               : 'border-warning-base bg-transparent',
                         ]"
                       >
-                        <ExclamationTriangleIcon
-                          v-if="step.type === 'actionRequired'"
+                        <CheckCircleIcon
+                          v-if="step.type === 'approved'"
+                          class="size-4 text-neutral-ghost"
+                          aria-hidden="true"
+                        />
+                        <XCircleIcon
+                          v-else-if="step.type === 'declined'"
                           class="size-4 text-neutral-ghost"
                           aria-hidden="true"
                         />
                         <EllipsisHorizontalIcon
-                          v-else-if="step.type === 'pending'"
+                          v-else
                           class="h-[16px] w-[16px] shrink-0 text-warning-base"
-                          aria-hidden="true"
-                        />
-                        <CheckCircleIcon
-                          v-else-if="step.type === 'approved'"
-                          class="size-4 text-neutral-ghost"
                           aria-hidden="true"
                         />
                       </div>
                       <div class="flex flex-col gap-0.5 min-w-0">
-                        <span
-                          class="text-body-md"
-                          :class="step.type === 'actionRequired' ? 'text-error-base' : 'text-neutral-base'"
-                        >{{ step.approver }}</span>
-                        <span v-if="step.actionLink" class="flex items-center gap-1">
-                          <LinkText :label="step.actionLink.label" :href="step.actionLink.href" class="text-body-md" />
-                          <ArrowTopRightOnSquareIcon class="size-4 text-info-base shrink-0" />
-                        </span>
-                        <span class="text-body-sm text-neutral-subtle">{{ step.status }}</span>
+                        <span class="text-body-md text-neutral-base">{{ step.approver }}</span>
+                        <span class="text-body-sm text-neutral-subtle">{{ step.roleLabel }} — {{ step.status }}</span>
                       </div>
                     </div>
                   </template>
@@ -1984,35 +2270,28 @@ const AccessRequestsListPage = defineComponent({
                     <div
                       class="flex shrink-0 items-center justify-center rounded-full border-2"
                       :class="[
-                        data.approvalProgressStatus !== 'Approved' &&
-                        data.status !== 'Approved' &&
-                        data.approvalProgressStatus !== 'Denied' &&
-                        data.status !== 'Denied' &&
-                        data.approvalProgressStatus !== 'Expired' &&
-                        data.status !== 'Expired'
-                          ? 'h-[22px] w-[22px]'
-                          : 'size-6',
-                        data.approvalProgressStatus === 'Approved' || data.status === 'Approved'
+                        data.status === 'Pending' ? 'h-[22px] w-[22px]' : 'size-6',
+                        data.status === 'Granted' || data.status === 'Approved'
                           ? 'border-success-base bg-success-base'
-                          : data.approvalProgressStatus === 'Denied' || data.status === 'Denied'
+                          : data.status === 'Declined'
                             ? 'border-error-base bg-error-base'
-                            : data.approvalProgressStatus === 'Expired' || data.status === 'Expired'
+                            : data.status === 'Expired'
                               ? 'border-neutral-default_solid bg-transparent'
                               : 'border-warning-base bg-transparent',
                       ]"
                     >
                       <CheckCircleIcon
-                        v-if="data.approvalProgressStatus === 'Approved' || data.status === 'Approved'"
+                        v-if="data.status === 'Granted' || data.status === 'Approved'"
                         class="size-4 text-neutral-ghost"
                         aria-hidden="true"
                       />
                       <XCircleIcon
-                        v-else-if="data.approvalProgressStatus === 'Denied' || data.status === 'Denied'"
+                        v-else-if="data.status === 'Declined'"
                         class="size-4 text-neutral-ghost"
                         aria-hidden="true"
                       />
                       <XCircleIcon
-                        v-else-if="data.approvalProgressStatus === 'Expired' || data.status === 'Expired'"
+                        v-else-if="data.status === 'Expired'"
                         class="size-4 text-neutral-subtle"
                         aria-hidden="true"
                       />
@@ -2029,18 +2308,17 @@ const AccessRequestsListPage = defineComponent({
                   </div>
                 </div>
 
-                <!-- Action Buttons (for Pending and Missing Data) -->
                 <div
-                  v-if="data.status === 'Pending' || data.status === 'Missing Data'"
+                  v-if="data.status === 'Pending' && data.approvalRoute === 'administrator'"
                   class="flex gap-sm border-t border-neutral-default_solid pt-4"
                 >
                   <Button
-                    label="Deny Access"
+                    label="Decline access"
                     severity="danger"
                     variant="outlined"
-                    @click="openDenyAccessDialog(data.id)"
+                    @click="openDeclineAccessDialog(data.id)"
                   />
-                  <Button label="Grant Access" @click="openGrantAccessDialog(data.id)" />
+                  <Button label="Approve access" @click="openApproveAccessDialog(data.id)" />
                 </div>
                 </div>
               </div>
@@ -2089,43 +2367,26 @@ const AccessRequestsListPage = defineComponent({
           </div>
 
           <template v-if="activeSessionsSubTab === 'timed-access'">
-            <div class="flex shrink-0 w-full min-w-0 items-start gap-sm pb-4">
-              <div class="min-w-0 flex-1">
-                <DataTableToolbar
-                  search-placeholder="Search"
-                  :show-add-button="false"
-                  :show-filter-button="false"
-                  :show-columns-button="false"
-                  :show-download-button="false"
-                  :show-save-view-button="false"
-                  :show-refresh-button="true"
-                  :active-filters="[]"
-                  @search="handleActiveSessionsSearch"
-                  @refresh="handleActiveSessionsRefresh"
-                >
-                  <template #saved-views>
-                    <span class="text-body-sm text-neutral-subtle">Last refreshed a minute ago</span>
-                  </template>
-                </DataTableToolbar>
-              </div>
-              <div class="flex shrink-0 items-start pt-0.5">
-                <Button
-                  label="Actions"
-                  severity="secondary"
-                  variant="outlined"
-                  icon-pos="right"
-                  aria-haspopup="true"
-                  aria-label="Open actions menu"
-                  @click="toggleActiveSessionsActionsMenu"
-                >
-                  <template #icon>
-                    <ChevronDownIcon class="size-4" aria-hidden="true" />
-                  </template>
-                </Button>
-              </div>
+            <div class="shrink-0 w-full min-w-0 pb-4">
+              <DataTableToolbar
+                search-placeholder="Search"
+                :show-add-button="false"
+                :show-filter-button="false"
+                :show-columns-button="false"
+                :show-download-button="false"
+                :show-save-view-button="false"
+                :show-refresh-button="true"
+                :active-filters="[]"
+                @search="handleActiveSessionsSearch"
+                @refresh="handleActiveSessionsRefresh"
+              >
+                <template #right-section>
+                  <span class="text-body-sm text-neutral-subtle">Last refreshed a minute ago</span>
+                </template>
+              </DataTableToolbar>
             </div>
 
-            <div :class="listPageTableSectionClass">
+            <div :class="listPageTableSectionClass" class="relative">
               <div :class="listPageTableCardClass">
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
@@ -2171,47 +2432,52 @@ const AccessRequestsListPage = defineComponent({
               >
                 {{ formatCompactPageReport(timedAccessRows.length) }}
               </p>
+              <Transition
+                enter-active-class="transition-all duration-200 ease-out"
+                enter-from-class="opacity-0 translate-y-4"
+                enter-to-class="opacity-100 translate-y-0"
+                leave-active-class="transition-all duration-150 ease-in"
+                leave-from-class="opacity-100 translate-y-0"
+                leave-to-class="opacity-0 translate-y-4"
+              >
+                <div
+                  v-if="timedAccessSelection.length > 0"
+                  class="absolute bottom-16 left-1/2 -translate-x-1/2 z-10"
+                >
+                  <ActionsToolbar
+                    :actions="activeSessionBulkActions"
+                    :selected-items="timedAccessToolbarSelectedItems"
+                    :selection-label="timedAccessSelection.length === 1 ? 'Item selected' : 'Items selected'"
+                    @action="applyTimedAccessBulkAction"
+                    @deselect="handleTimedAccessDeselect"
+                    @close="clearTimedAccessSelection"
+                  />
+                </div>
+              </Transition>
             </div>
           </template>
 
           <template v-else-if="activeSessionsSubTab === 'device-admin'">
-            <div class="flex shrink-0 w-full min-w-0 items-start gap-sm pb-4">
-              <div class="min-w-0 flex-1">
-                <DataTableToolbar
-                  search-placeholder="Search"
-                  :show-add-button="false"
-                  :show-filter-button="false"
-                  :show-columns-button="false"
-                  :show-download-button="false"
-                  :show-save-view-button="false"
-                  :show-refresh-button="true"
-                  :active-filters="[]"
-                  @search="handleActiveSessionsSearch"
-                  @refresh="handleActiveSessionsRefresh"
-                >
-                  <template #saved-views>
-                    <span class="text-body-sm text-neutral-subtle">Last refreshed a minute ago</span>
-                  </template>
-                </DataTableToolbar>
-              </div>
-              <div class="flex shrink-0 items-start pt-0.5">
-                <Button
-                  label="Actions"
-                  severity="secondary"
-                  variant="outlined"
-                  icon-pos="right"
-                  aria-haspopup="true"
-                  aria-label="Open actions menu"
-                  @click="toggleActiveSessionsActionsMenu"
-                >
-                  <template #icon>
-                    <ChevronDownIcon class="size-4" aria-hidden="true" />
-                  </template>
-                </Button>
-              </div>
+            <div class="shrink-0 w-full min-w-0 pb-4">
+              <DataTableToolbar
+                search-placeholder="Search"
+                :show-add-button="false"
+                :show-filter-button="false"
+                :show-columns-button="false"
+                :show-download-button="false"
+                :show-save-view-button="false"
+                :show-refresh-button="true"
+                :active-filters="[]"
+                @search="handleActiveSessionsSearch"
+                @refresh="handleActiveSessionsRefresh"
+              >
+                <template #right-section>
+                  <span class="text-body-sm text-neutral-subtle">Last refreshed a minute ago</span>
+                </template>
+              </DataTableToolbar>
             </div>
 
-            <div :class="listPageTableSectionClass">
+            <div :class="listPageTableSectionClass" class="relative">
               <div :class="listPageTableCardClass">
               <CircuitDataTable
                 class="min-h-0 min-w-0 w-full flex-1"
@@ -2255,31 +2521,64 @@ const AccessRequestsListPage = defineComponent({
               >
                 {{ formatCompactPageReport(deviceAdminRows.length) }}
               </p>
+              <Transition
+                enter-active-class="transition-all duration-200 ease-out"
+                enter-from-class="opacity-0 translate-y-4"
+                enter-to-class="opacity-100 translate-y-0"
+                leave-active-class="transition-all duration-150 ease-in"
+                leave-from-class="opacity-100 translate-y-0"
+                leave-to-class="opacity-0 translate-y-4"
+              >
+                <div
+                  v-if="deviceAdminSelection.length > 0"
+                  class="absolute bottom-16 left-1/2 -translate-x-1/2 z-10"
+                >
+                  <ActionsToolbar
+                    :actions="activeSessionBulkActions"
+                    :selected-items="deviceAdminToolbarSelectedItems"
+                    :selection-label="deviceAdminSelection.length === 1 ? 'Item selected' : 'Items selected'"
+                    @action="applyDeviceAdminBulkAction"
+                    @deselect="handleDeviceAdminDeselect"
+                    @close="clearDeviceAdminSelection"
+                  />
+                </div>
+              </Transition>
             </div>
           </template>
-
-          <Menu ref="activeSessionsActionsMenuRef" :model="activeSessionsActionsMenuItems" :popup="true" />
         </div>
 
         <div v-else-if="activeMainTab === 'approval-flows'" class="relative flex min-h-0 min-w-0 w-full flex-1 flex-col items-stretch overflow-y-auto bg-neutral-surface px-6 pb-6">
-          <div class="shrink-0 w-full min-w-0 pt-6 pb-4">
-            <DataTableToolbar
-              add-button-label="Add Approval Flow"
-              search-placeholder="Search"
-              :show-add-button="true"
-              :show-filter-button="true"
-              :show-refresh-button="false"
-              :show-columns-button="false"
-              :show-download-button="false"
-              :show-save-view-button="false"
-              :active-filters="activeApprovalFlowFilterChips"
-              :max-visible-filters="5"
-              @search="handleApprovalFlowSearch"
-              @filter="handleApprovalFlowFilter"
-              @filter-remove="removeApprovalFlowFilterChip"
-              @clear-all="clearAllApprovalFlowFilters"
-              @add="handleAddApprovalFlow"
-            />
+          <div class="flex shrink-0 w-full min-w-0 items-start gap-sm pt-6 pb-4">
+            <div class="flex shrink-0 items-start pt-0.5">
+              <Button
+                label="Add flow"
+                aria-haspopup="true"
+                aria-label="Add flow"
+                @click="toggleAddApprovalFlowMenu"
+              >
+                <template #icon="iconProps">
+                  <PlusIcon :class="iconProps?.class" aria-hidden="true" />
+                </template>
+              </Button>
+              <Menu ref="addApprovalFlowMenuRef" :model="addApprovalFlowMenuItems" :popup="true" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <DataTableToolbar
+                search-placeholder="Search"
+                :show-add-button="false"
+                :show-filter-button="true"
+                :show-refresh-button="false"
+                :show-columns-button="false"
+                :show-download-button="false"
+                :show-save-view-button="false"
+                :active-filters="appliedApprovalFlowFilters"
+                :max-visible-filters="5"
+                @search="handleApprovalFlowSearch"
+                @filter="handleApprovalFlowFilter"
+                @filter-remove="handleApprovalFlowFilterRemove"
+                @clear-all="clearAllApprovalFlowFilters"
+              />
+            </div>
           </div>
 
           <div :class="listPageTableSectionClass">
@@ -2311,7 +2610,7 @@ const AccessRequestsListPage = defineComponent({
               <div
                 class="box-border flex w-full min-w-0 max-w-none flex-col gap-4 border-t border-neutral-default_solid bg-neutral-surface p-md text-start"
               >
-                <p v-if="data.flowType === 'Device Admin'" class="text-body-md text-neutral-base">
+                <p v-if="data.flowType === 'Device admin'" class="text-body-md text-neutral-base">
                   Device admin flows are approved by administrators.
                 </p>
                 <p v-else-if="data.expansionDescription" class="text-body-md text-neutral-base">
@@ -2321,7 +2620,7 @@ const AccessRequestsListPage = defineComponent({
                   Approval flow configuration for <span class="text-body-md-semi-bold text-neutral-base">{{ data.name }}</span>
                 </p>
                 <div v-if="data.configurationSteps?.length" class="flex flex-col gap-3">
-                  <span class="text-body-md-semi-bold text-neutral-base">Approval Configuration</span>
+                  <span class="text-body-md-semi-bold text-neutral-base">Approval configuration</span>
                   <div class="flex flex-col">
                     <template v-for="(step, idx) in data.configurationSteps" :key="idx">
                       <div class="flex gap-sm">
@@ -2380,159 +2679,24 @@ const AccessRequestsListPage = defineComponent({
               {{ formatCompactPageReport(approvalFlowsTotalRecords) }}
             </p>
           </div>
+
+          <FilterModal
+            v-model:visible="showApprovalFlowFilterModal"
+            :basic-filters="approvalFlowBasicFilters"
+            :applied-filters="approvalFlowFilterModalAppliedFilters"
+            @apply="handleApprovalFlowFilterApply"
+            @clear-all="handleApprovalFlowFilterClearAll"
+          />
         </div>
 
         </div>
       </div>
 
       <Dialog
-        v-model:visible="showApprovalFlowFilterDialog"
-        :draggable="false"
-        modal
-        header="Filter"
-        :style="{ width: '560px' }"
-      >
-        <template #closeicon><XMarkIcon /></template>
-        <div class="flex flex-col gap-md">
-          <FormField label="User Group Assignment">
-            <template #default="{ inputId }">
-              <IconField>
-                <InputIcon>
-                  <MagnifyingGlassIcon />
-                </InputIcon>
-                <InputText
-                  :id="inputId"
-                  v-model="draftFlowUserGroupSearch"
-                  placeholder="Search"
-                  class="w-full"
-                />
-              </IconField>
-            </template>
-          </FormField>
-          <FormField label="Flow Type">
-            <template #default>
-              <div class="flex flex-wrap gap-sm">
-                <button
-                  v-for="opt in approvalFlowFilterFlowTypes"
-                  :key="opt"
-                  type="button"
-                  class="inline-flex items-center gap-sm rounded-full border px-md py-sm text-body-md transition-colors"
-                  :class="
-                    draftFlowTypes.includes(opt)
-                      ? 'border-info-base bg-info-surface text-info-base'
-                      : 'border-neutral-default_solid text-neutral-base'
-                  "
-                  :aria-pressed="draftFlowTypes.includes(opt)"
-                  @click="toggleDraftFlowType(opt)"
-                >
-                  <CheckCircleIcon
-                    v-if="draftFlowTypes.includes(opt)"
-                    class="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span
-                    v-else
-                    class="box-border size-4 shrink-0 rounded-full border-2 border-neutral-default_solid"
-                    aria-hidden="true"
-                  />
-                  <span>{{ opt }}</span>
-                </button>
-              </div>
-            </template>
-          </FormField>
-          <FormField label="Approval Mode">
-            <template #default>
-              <div class="flex flex-wrap gap-sm">
-                <button
-                  v-for="opt in approvalFlowFilterApprovalModes"
-                  :key="opt"
-                  type="button"
-                  class="inline-flex items-center gap-sm rounded-full border px-md py-sm text-body-md transition-colors"
-                  :class="
-                    draftFlowApprovalModes.includes(opt)
-                      ? 'border-info-base bg-info-surface text-info-base'
-                      : 'border-neutral-default_solid text-neutral-base'
-                  "
-                  :aria-pressed="draftFlowApprovalModes.includes(opt)"
-                  @click="toggleDraftFlowApprovalMode(opt)"
-                >
-                  <CheckCircleIcon
-                    v-if="draftFlowApprovalModes.includes(opt)"
-                    class="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span
-                    v-else
-                    class="box-border size-4 shrink-0 rounded-full border-2 border-neutral-default_solid"
-                    aria-hidden="true"
-                  />
-                  <span>{{ opt }}</span>
-                </button>
-              </div>
-            </template>
-          </FormField>
-          <FormField label="Status">
-            <template #default>
-              <div class="flex flex-wrap gap-sm">
-                <button
-                  v-for="opt in approvalFlowFilterStatuses"
-                  :key="opt"
-                  type="button"
-                  class="inline-flex items-center gap-sm rounded-full border px-md py-sm text-body-md transition-colors"
-                  :class="
-                    draftFlowStatuses.includes(opt)
-                      ? 'border-info-base bg-info-surface text-info-base'
-                      : 'border-neutral-default_solid text-neutral-base'
-                  "
-                  :aria-pressed="draftFlowStatuses.includes(opt)"
-                  @click="toggleDraftFlowStatus(opt)"
-                >
-                  <CheckCircleIcon
-                    v-if="draftFlowStatuses.includes(opt)"
-                    class="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span
-                    v-else
-                    class="box-border size-4 shrink-0 rounded-full border-2 border-neutral-default_solid"
-                    aria-hidden="true"
-                  />
-                  <span>{{ opt }}</span>
-                </button>
-              </div>
-            </template>
-          </FormField>
-        </div>
-        <template #footer>
-          <div class="flex items-center flex-1 min-w-0">
-            <Button
-              label="Clear all"
-              severity="secondary"
-              variant="text"
-              @click="clearDraftApprovalFlowFilters"
-            />
-          </div>
-          <div class="flex gap-sm shrink-0">
-            <Button
-              label="Cancel"
-              severity="secondary"
-              variant="text"
-              @click="cancelApprovalFlowFilterDialog"
-            />
-            <Button
-              label="Apply"
-              :disabled="approvalFlowFilterApplyDisabled"
-              @click="applyApprovalFlowFilters"
-            />
-          </div>
-        </template>
-      </Dialog>
-
-      <Dialog
         v-model:visible="showDisableApprovalFlowDialog"
         :draggable="false"
         modal
-        header="Disable Approval Flow"
+        header="Disable approval flow"
         :style="{ width: '480px' }"
       >
         <template #closeicon><XMarkIcon /></template>
@@ -2550,7 +2714,7 @@ const AccessRequestsListPage = defineComponent({
               @click="closeDisableApprovalFlowDialog"
             />
             <Button
-              label="Disable Flow"
+              label="Disable flow"
               severity="danger"
               variant="outlined"
               @click="confirmDisableApprovalFlow"
@@ -2560,10 +2724,10 @@ const AccessRequestsListPage = defineComponent({
       </Dialog>
 
       <Dialog
-        v-model:visible="showGrantAccessDialog"
+        v-model:visible="showApproveAccessDialog"
         :draggable="false"
         modal
-        header="Grant Access"
+        header="Approve access"
         :style="{ width: '560px' }"
       >
         <template #closeicon><XMarkIcon /></template>
@@ -2571,35 +2735,25 @@ const AccessRequestsListPage = defineComponent({
           <p class="text-body-md text-neutral-base">
             <span class="text-body-md-semi-bold">{{ pendingAccessRequest?.requester }}</span>
             will be given access to
-            <span class="text-body-md-semi-bold">{{ grantAccessResourceName }}.</span>
+            <span class="text-body-md-semi-bold">{{ approveAccessResourceName }}</span>
+            via the
+            <span class="text-body-md-semi-bold">{{ pendingAccessRequest?.accessGroup }}</span>
+            user group.
           </p>
 
-          <div class="grid grid-cols-2 gap-md">
-            <FormField label="Access Duration">
-              <template #default="{ inputId }">
-                <Select
-                  :inputId="inputId"
-                  v-model="grantAccessDuration"
-                  :options="grantAccessDurationOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  appendTo="body"
-                  class="w-full"
-                />
-              </template>
-            </FormField>
-            <FormField label="Access Expiration">
-              <template #default>
-                <span class="text-body-md text-neutral-base">{{ grantAccessExpirationLabel }}</span>
-              </template>
-            </FormField>
-          </div>
+          <FormField label="Request expires">
+            <template #default>
+              <span class="text-body-md text-neutral-base">
+                Incomplete requests expire 30 days from submission (by {{ requestExpiryLabel }}).
+              </span>
+            </template>
+          </FormField>
 
-          <FormField label="Message to Requester (optional)">
+          <FormField label="Message to requester (optional)">
             <template #default="{ inputId }">
               <Textarea
                 :id="inputId"
-                v-model="grantAccessMessage"
+                v-model="approveAccessMessage"
                 class="w-full"
                 rows="4"
               />
@@ -2613,18 +2767,18 @@ const AccessRequestsListPage = defineComponent({
               label="Cancel"
               severity="secondary"
               variant="outlined"
-              @click="closeGrantAccessDialog"
+              @click="closeApproveAccessDialog"
             />
-            <Button label="Grant Access" @click="confirmGrantAccess" />
+            <Button label="Approve access" @click="confirmApproveAccess" />
           </div>
         </template>
       </Dialog>
 
       <Dialog
-        v-model:visible="showDenyAccessDialog"
+        v-model:visible="showDeclineAccessDialog"
         :draggable="false"
         modal
-        header="Deny Access"
+        header="Decline access"
         :style="{ width: '560px' }"
       >
         <template #closeicon><XMarkIcon /></template>
@@ -2632,18 +2786,18 @@ const AccessRequestsListPage = defineComponent({
           <p class="text-body-md text-neutral-base">
             <span class="text-body-md-semi-bold">{{ pendingAccessRequest?.requester }}</span>
             will not be given access to
-            <span class="text-body-md-semi-bold">{{ grantAccessResourceName }}.</span>
+            <span class="text-body-md-semi-bold">{{ approveAccessResourceName }}.</span>
           </p>
 
           <FormField
             label="Reason"
             required
-            helpText="Reason for denial will be provided to the requester."
+            helpText="Reason for decline will be provided to the requester."
           >
             <template #default="{ inputId }">
               <Textarea
                 :id="inputId"
-                v-model="denyAccessReason"
+                v-model="declineAccessReason"
                 class="w-full"
                 rows="4"
               />
@@ -2657,7 +2811,7 @@ const AccessRequestsListPage = defineComponent({
             <template #default="{ inputId }">
               <Textarea
                 :id="inputId"
-                v-model="denyAccessInternalNotes"
+                v-model="declineAccessInternalNotes"
                 class="w-full"
                 rows="4"
               />
@@ -2671,14 +2825,14 @@ const AccessRequestsListPage = defineComponent({
               label="Cancel"
               severity="secondary"
               variant="outlined"
-              @click="closeDenyAccessDialog"
+              @click="closeDeclineAccessDialog"
             />
             <Button
-              label="Deny Access"
+              label="Decline access"
               severity="danger"
               variant="outlined"
-              :disabled="denyAccessConfirmDisabled"
-              @click="confirmDenyAccess"
+              :disabled="declineAccessConfirmDisabled"
+              @click="confirmDeclineAccess"
             />
           </div>
         </template>
@@ -2688,12 +2842,17 @@ const AccessRequestsListPage = defineComponent({
         v-model:visible="showRevokeTimedAccessDialog"
         :draggable="false"
         modal
-        header="Revoke Access"
+        header="Revoke access"
         :style="{ width: '560px' }"
       >
         <template #closeicon><XMarkIcon /></template>
-        <p class="text-body-md text-neutral-base">
-          Are you sure you want to revoke the Timed Access session for
+        <p v-if="revokeTimedAccessBulkMode" class="text-body-md text-neutral-base">
+          Are you sure you want to revoke the timed access sessions for the
+          <span class="text-body-md-semi-bold">{{ revokeTimedAccessPendingIds.length }}</span>
+          selected items?
+        </p>
+        <p v-else class="text-body-md text-neutral-base">
+          Are you sure you want to revoke the timed access session for
           <span class="text-body-md-semi-bold">{{ pendingRevokeTimedAccessSession?.user }}</span>?
         </p>
         <template #footer>
@@ -2719,17 +2878,17 @@ const AccessRequestsListPage = defineComponent({
         v-model:visible="showRevokeDeviceAdminDialog"
         :draggable="false"
         modal
-        header="Revoke Access"
+        header="Revoke access"
         :style="{ width: '560px' }"
       >
         <template #closeicon><XMarkIcon /></template>
         <p v-if="revokeDeviceAdminBulkMode" class="text-body-md text-neutral-base">
-          Are you sure you want to revoke the Device Admin sessions for the
+          Are you sure you want to revoke the device admin sessions for the
           <span class="text-body-md-semi-bold">{{ revokeDeviceAdminSelectedUserCount }}</span>
           selected users?
         </p>
         <p v-else class="text-body-md text-neutral-base">
-          Are you sure you want to revoke the Device Admin session for
+          Are you sure you want to revoke the device admin session for
           <span class="text-body-md-semi-bold">{{ pendingRevokeDeviceAdminSession?.user }}</span>
           on
           <span class="text-body-md-semi-bold">{{ pendingRevokeDeviceAdminSession?.device }}</span>?
@@ -2771,9 +2930,9 @@ type Story = StoryObj<typeof AccessRequestsListPage>;
 
 export const Default: Story = {};
 
-export const OthersTab: Story = {
+export const DelegatedApprovalsTab: Story = {
   args: {
-    initialSubTab: 'others',
+    initialRequestQueueSubTab: 'delegated',
   },
 };
 
