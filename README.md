@@ -98,21 +98,29 @@ This repo is set up to work with the **Figma MCP server** in Cursor:
 
 ## Access Requests AWS SAM deploy
 
-`Circuit-access-requests` is hosted with **AWS SAM** (S3 + CloudFront + API Gateway + Lambda + DynamoDB), not the shared R2 public-demos pipeline.
+`Circuit-access-requests` uses **AWS SAM** for the API (Lambda + DynamoDB) and **Cloudflare R2** for the shareable HTTPS demo UI.
 
-Prerequisites: AWS CLI, [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), and credentials that can create CloudFormation / S3 / CloudFront / DynamoDB / Lambda / API Gateway resources in `us-east-2`.
+Prerequisites: AWS CLI, [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), and credentials for the stack in `us-west-2` (`produx-pdlc` SSO works for SAM deploy).
 
 ```bash
-pnpm install
-pnpm run deploy:access-requests
+aws sso login --profile produx-pdlc
+AWS_PROFILE=produx-pdlc AWS_REGION=us-west-2 pnpm run deploy:access-requests
 ```
 
-The script prints:
+That deploys the API and syncs static assets to S3 (HTTP-only fallback). For the **shareable HTTPS URL**, publish to R2 (requires Cloudflare secrets — run via GitHub Action or locally):
 
-- **CloudFront URL** — open this for the demo UI
-- **API URL** — used as `VITE_API_BASE_URL` for preferences and saved views
+```bash
+AWS_PROFILE=produx-pdlc AWS_REGION=us-west-2 pnpm run deploy:access-requests:public
+```
 
-GitHub Action: `.github/workflows/deploy-sam-access-requests.yml` (`Deploy Access Requests (SAM)`). The existing `GithubActionsCI-circuit-playground` role today only covers CodeArtifact-style CI; it needs CloudFormation (and related) permissions before the workflow can finish a stack deploy. Until then, run `pnpm run deploy:access-requests` with admin/developer credentials.
+**Share this URL:**
+
+- **https://demos.jumpcloud-test.workers.dev/Circuit-access-requests-latest/**
+- Password: `demo`
+
+The demo UI calls the SAM API for preferences and saved views (`VITE_API_BASE_URL` is set at build time).
+
+GitHub Action: `.github/workflows/deploy-sam-access-requests.yml` deploys SAM + R2 on push/dispatch.
 
 Template validation / build smoke test:
 
@@ -128,7 +136,7 @@ cd infra && sam local start-api
 curl http://127.0.0.1:3000/health
 ```
 
-The previous R2 URL (`demos.jumpcloud-test.workers.dev/Circuit-access-requests-…`) is retired for this demo.
+The previous R2-only URL without the SAM API is retired; use the HTTPS URL above.
 
 ## Scripts
 
@@ -136,6 +144,7 @@ The previous R2 URL (`demos.jumpcloud-test.workers.dev/Circuit-access-requests-�
 |---------|-------------|
 | `npm run storybook` | Start Storybook dev server on port 6006 |
 | `npm run build-storybook` | Build static Storybook for deployment |
-| `npm run deploy:access-requests` | Build and deploy Access Requests via SAM |
+| `npm run deploy:access-requests` | Deploy SAM API + S3 fallback |
+| `npm run deploy:access-requests:public` | Publish HTTPS demo to R2 |
 | `npm run dev` | Start Vite dev server |
 | `npm run build` | Production build |

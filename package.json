@@ -10,6 +10,7 @@
     "dev:demos": "vite --config vite.config.demos.ts",
     "build:access-requests": "vite build --config vite.config.access-requests.ts",
     "deploy:access-requests": "bash scripts/deploy-sam.sh",
+    "deploy:access-requests:public": "bash scripts/deploy-access-requests-r2.sh",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "deploy-storybook": "pnpm run build-storybook && pnpm exec gh-pages -d storybook-static --cname circuit-playground.jumpcloud.io",

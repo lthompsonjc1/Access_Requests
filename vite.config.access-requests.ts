@@ -7,7 +7,8 @@ import tailwindcss from '@tailwindcss/vite';
 const ROOT = __dirname;
 const GEN_DIR = path.resolve(ROOT, '.generated-demos');
 const DEMO_ID = 'Circuit-access-requests';
-const HTML_ENTRY = path.resolve(ROOT, `.demo-${DEMO_ID}.html`);
+/** Use a non-dot filename so built JS/CSS aren't named `.demo-…` (blocked by some filters). */
+const HTML_ENTRY = path.resolve(ROOT, 'access-requests-demo.html');
 
 fs.mkdirSync(GEN_DIR, { recursive: true });
 fs.writeFileSync(
@@ -36,7 +37,12 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue(), tailwindcss()],
     resolve: {
-      alias: { '@': path.resolve(ROOT, 'src') },
+      alias: {
+        '@': path.resolve(ROOT, 'src'),
+        // Access Requests pages use defineComponent({ template: `...` }) in .ts files.
+        // Runtime-only Vue cannot compile those; Storybook includes the compiler.
+        vue: path.resolve(ROOT, 'node_modules/vue/dist/vue.esm-bundler.js'),
+      },
     },
     base: './',
     define: {
@@ -47,6 +53,11 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       rollupOptions: {
         input: HTML_ENTRY,
+        output: {
+          entryFileNames: 'assets/[name]-[hash].js',
+          chunkFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash][extname]',
+        },
       },
     },
   };

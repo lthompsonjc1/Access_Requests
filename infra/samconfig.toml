@@ -2,7 +2,7 @@ version = 0.1
 
 [default.global.parameters]
 stack_name = "circuit-access-requests"
-region = "us-east-2"
+region = "us-west-2"
 
 [default.build.parameters]
 cached = true
