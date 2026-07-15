@@ -6,6 +6,7 @@ import {
   CheckboxWithLabel,
   FormField,
   LinkText,
+  RadioButtonWithLabel,
 } from '@jumpcloud/circuit/components';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
@@ -29,6 +30,11 @@ import PageSection from '@/components/PageSection.vue';
 import SettingCardItem from '@/components/setting-card/SettingCardItem.vue';
 import TopBar from '@/components/TopBar.vue';
 import {
+  getDefaultRequestQueueSubTab,
+  setDefaultRequestQueueSubTab,
+  type RequestQueueSubTab,
+} from '../shared/accessRequestPreferences';
+import {
   ACCESS_REQUESTS_LIST_STORY_PATH,
   menuItems,
   navigateToStorybookStory,
@@ -42,6 +48,11 @@ import {
   setAllWebhookChannelEvents,
   webhookChannelEventsTagLabel,
 } from '../shared/webhookChannelSettings';
+
+const requestQueueSubTabOptions: { label: string; value: RequestQueueSubTab }[] = [
+  { label: 'Administrator', value: 'administrator' },
+  { label: 'Others', value: 'delegated' },
+];
 
 const settingCardClass = 'w-full rounded-lg bg-neutral-surface shadow-e100';
 
@@ -65,6 +76,7 @@ const AccessRequestSettingsPage = defineComponent({
     CheckboxWithLabel,
     FormField,
     LinkText,
+    RadioButtonWithLabel,
     Button,
     Dialog,
     IconField,
@@ -81,6 +93,7 @@ const AccessRequestSettingsPage = defineComponent({
   },
   setup() {
     const accessRequestsOn = ref(false);
+    const defaultRequestQueueSubTab = ref<RequestQueueSubTab>(getDefaultRequestQueueSubTab());
     const notifyViaEmail = ref(true);
     const notifyRequestReceived = ref(true);
     const notifyApprovalDenial = ref(true);
@@ -177,11 +190,18 @@ const AccessRequestSettingsPage = defineComponent({
       navigateToStorybookStory(ACCESS_REQUESTS_LIST_STORY_PATH);
     }
 
+    function handleSave() {
+      setDefaultRequestQueueSubTab(defaultRequestQueueSubTab.value);
+      navigateToList();
+    }
+
     return {
       menuItems,
       profileMenuItems,
       settingCardClass,
       accessRequestsOn,
+      defaultRequestQueueSubTab,
+      requestQueueSubTabOptions,
       notifyViaEmail,
       notifyRequestReceived,
       notifyApprovalDenial,
@@ -207,6 +227,7 @@ const AccessRequestSettingsPage = defineComponent({
       closeSelectChannelModal,
       handleSelectChannelAdd,
       navigateToList,
+      handleSave,
     };
   },
   template: `
@@ -262,6 +283,37 @@ const AccessRequestSettingsPage = defineComponent({
                         </span>
                       </template>
                     </SettingCardItem>
+                  </div>
+                </section>
+
+                <section class="flex flex-col gap-4">
+                  <PageSection title="Request queue">
+                    <template #actions><span /></template>
+                    <template #subtitle>
+                      <span class="text-body-sm text-neutral-muted">
+                        Choose the default tab you land on when opening the request queue.
+                      </span>
+                    </template>
+                  </PageSection>
+
+                  <div :class="[settingCardClass, 'flex flex-col gap-md p-4']">
+                    <FormField label="Default sub tab" required>
+                      <template #default>
+                        <div class="flex flex-col gap-sm">
+                          <RadioButtonWithLabel
+                            v-for="option in requestQueueSubTabOptions"
+                            :key="option.value"
+                            v-model="defaultRequestQueueSubTab"
+                            :value="option.value"
+                            name="default-request-queue-sub-tab"
+                          >
+                            <template #label>
+                              <span class="text-body-md text-neutral-base">{{ option.label }}</span>
+                            </template>
+                          </RadioButtonWithLabel>
+                        </div>
+                      </template>
+                    </FormField>
                   </div>
                 </section>
 
@@ -441,7 +493,7 @@ const AccessRequestSettingsPage = defineComponent({
             class="flex shrink-0 items-center justify-end gap-sm border-t border-neutral-default_solid bg-neutral-base px-6 py-3"
           >
             <Button label="Cancel" severity="secondary" variant="outlined" @click="navigateToList" />
-            <Button label="Save" severity="secondary" disabled />
+            <Button label="Save" @click="handleSave" />
           </div>
         </div>
       </div>

@@ -14,7 +14,12 @@ import {
   ToggleSwitch,
   ActionsToolbar,
 } from '@jumpcloud/circuit/components';
-import type { Action, SelectedItem } from '@jumpcloud/circuit/components';
+import type {
+  Action,
+  SelectedItem,
+  DataTableToolbarSavedView,
+  SaveViewData,
+} from '@jumpcloud/circuit/components';
 import Menu from 'primevue/menu';
 import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
@@ -40,6 +45,7 @@ import {
 import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 import TopBar from '@/components/TopBar.vue';
+import { getDefaultRequestQueueSubTab } from '../shared/accessRequestPreferences';
 import {
   ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH,
   ACCESS_REQUESTS_SETTINGS_STORY_PATH,
@@ -1209,8 +1215,43 @@ const exportOptions = [
 
 // ─── Initial active filters ───
 
-const initialFilters = [
+const initialFilters: AppliedFilterChip[] = [
   { key: 'Status', operator: 'is', value: 'Pending', id: 'filter-1' },
+];
+
+type RequestQueueSavedView = DataTableToolbarSavedView & {
+  data?: { filters: AppliedFilterChip[] };
+};
+
+const requestQueueDefaultViews: RequestQueueSavedView[] = [
+  {
+    id: 'default-all',
+    label: 'All requests',
+    editable: false,
+    deletable: false,
+    data: { filters: [] },
+  },
+];
+
+const initialRequestQueueSavedViews: RequestQueueSavedView[] = [
+  {
+    id: 'view-pending',
+    label: 'Pending requests',
+    isFavorite: true,
+    data: {
+      filters: [{ id: 'filter-pending', key: 'Status', operator: 'is', value: 'Pending' }],
+    },
+  },
+  {
+    id: 'view-resource',
+    label: 'Resource approvals',
+    isFavorite: false,
+    data: {
+      filters: [
+        { id: 'filter-resource', key: 'Type', operator: 'is', value: 'Resource approval' },
+      ],
+    },
+  },
 ];
 
 function approvalFlowMatchesFilters(row: ApprovalFlowRow, filters: AppliedFilterChip[]): boolean {
@@ -1251,7 +1292,7 @@ const AccessRequestsListPage = defineComponent({
   props: {
     initialRequestQueueSubTab: {
       type: String as () => 'administrator' | 'delegated',
-      default: 'administrator',
+      default: () => getDefaultRequestQueueSubTab(),
     },
     initialMainTab: {
       type: String as () => 'request-queue' | 'active-sessions' | 'approval-flows',
@@ -1299,8 +1340,25 @@ const AccessRequestsListPage = defineComponent({
     const delegatedRequests = ref<AccessRequest[]>([...delegatedRequestsData]);
     const searchQuery = ref('');
     const showFilterModal = ref(false);
-    const appliedFilters = ref<AppliedFilterChip[]>(initialFilters);
+    const appliedFilters = ref<AppliedFilterChip[]>(
+      initialRequestQueueSavedViews[0]?.data?.filters.map((f) => ({ ...f })) ?? [...initialFilters],
+    );
     const filterModalAppliedFilters = computed(() => chipsToModalFilters(appliedFilters.value));
+    const selectedViewId = ref<string | number | null>('view-pending');
+    const savedViews = ref<RequestQueueSavedView[]>(
+      initialRequestQueueSavedViews.map((view) => ({
+        ...view,
+        data: view.data
+          ? { filters: view.data.filters.map((filter) => ({ ...filter })) }
+          : undefined,
+      })),
+    );
+    const showSaveViewPanel = ref(false);
+    const saveViewPanelMode = ref<'save' | 'edit'>('save');
+    const editingViewId = ref<string | number | null>(null);
+    const editingViewName = ref('');
+    const editingViewIsPrivate = ref(false);
+    let savedViewSeq = initialRequestQueueSavedViews.length + 1;
     const activeMainTab = ref(props.initialMainTab);
     const activeRequestQueueSubTab = ref(props.initialRequestQueueSubTab);
     const activeSessionsSubTab = ref(props.initialActiveSessionsSubTab);
@@ -1909,6 +1967,98 @@ const AccessRequestsListPage = defineComponent({
       });
     }
 
+    function openSaveViewPanel(mode: 'save' | 'edit', view?: RequestQueueSavedView) {
+      saveViewPanelMode.value = mode;
+      editingViewId.value = view?.id ?? null;
+      editingViewName.value = view?.label ?? '';
+      editingViewIsPrivate.value = false;
+      showSaveViewPanel.value = true;
+    }
+
+    function handleSaveView() {
+      openSaveViewPanel('save');
+    }
+
+    function handleAddNewView() {
+      openSaveViewPanel('save');
+    }
+
+    function handleSaveViewCancel() {
+      showSaveViewPanel.value = false;
+      editingViewId.value = null;
+      editingViewName.value = '';
+      editingViewIsPrivate.value = false;
+    }
+
+    function handleSaveViewSubmit(data: SaveViewData) {
+      const name = data.name.trim();
+      if (!name) return;
+
+      const filtersSnapshot = appliedFilters.value.map((filter) => ({ ...filter }));
+
+      if (saveViewPanelMode.value === 'edit' && editingViewId.value != null) {
+        savedViews.value = savedViews.value.map((view) =>
+          view.id === editingViewId.value
+            ? { ...view, label: name, data: { filters: filtersSnapshot } }
+            : view,
+        );
+        selectedViewId.value = editingViewId.value;
+      } else {
+        const id = `view-${savedViewSeq++}`;
+        savedViews.value = [
+          ...savedViews.value,
+          {
+            id,
+            label: name,
+            isFavorite: false,
+            data: { filters: filtersSnapshot },
+          },
+        ];
+        selectedViewId.value = id;
+      }
+
+      handleSaveViewCancel();
+    }
+
+    function handleViewSelect(view: RequestQueueSavedView) {
+      selectedViewId.value = view.id;
+      const filters =
+        view.data?.filters ??
+        requestQueueDefaultViews.find((defaultView) => defaultView.id === view.id)?.data?.filters ??
+        [];
+      appliedFilters.value = filters.map((filter) => ({ ...filter }));
+      showSaveViewPanel.value = false;
+    }
+
+    function handleViewFavorite(view: RequestQueueSavedView) {
+      savedViews.value = savedViews.value.map((item) =>
+        item.id === view.id ? { ...item, isFavorite: true } : item,
+      );
+    }
+
+    function handleViewUnfavorite(view: RequestQueueSavedView) {
+      savedViews.value = savedViews.value.map((item) =>
+        item.id === view.id ? { ...item, isFavorite: false } : item,
+      );
+    }
+
+    function handleViewEdit(view: RequestQueueSavedView) {
+      selectedViewId.value = view.id;
+      appliedFilters.value = (view.data?.filters ?? []).map((filter) => ({ ...filter }));
+      openSaveViewPanel('edit', view);
+    }
+
+    function handleViewDelete(view: RequestQueueSavedView) {
+      savedViews.value = savedViews.value.filter((item) => item.id !== view.id);
+      if (selectedViewId.value === view.id) {
+        selectedViewId.value = 'default-all';
+        appliedFilters.value = [];
+      }
+      if (editingViewId.value === view.id) {
+        handleSaveViewCancel();
+      }
+    }
+
     function handleRowClick() {
       // Placeholder for row click navigation to detail
     }
@@ -1995,6 +2145,22 @@ const AccessRequestsListPage = defineComponent({
       basicFilters,
       appliedFilters,
       filterModalAppliedFilters,
+      selectedViewId,
+      savedViews,
+      requestQueueDefaultViews,
+      showSaveViewPanel,
+      saveViewPanelMode,
+      editingViewName,
+      editingViewIsPrivate,
+      handleSaveView,
+      handleAddNewView,
+      handleSaveViewSubmit,
+      handleSaveViewCancel,
+      handleViewSelect,
+      handleViewFavorite,
+      handleViewUnfavorite,
+      handleViewEdit,
+      handleViewDelete,
       mainTabs,
       requestQueueSubTabOptions,
       activeRequestQueueSubTab,
@@ -2121,13 +2287,6 @@ const AccessRequestsListPage = defineComponent({
             />
           </div>
 
-          <MessageNotification
-            v-if="isDelegatedQueueView"
-            severity="info"
-            detail="Delegated approvals are actioned by non-admin approvers in the user portal. This view is monitor-only for administrators."
-            class="mb-4"
-          />
-
           <!-- DataTableToolbar (outside DataTable - Circuit DataTable does not support #toolbar slot) -->
           <div class="shrink-0 w-full min-w-0 pb-4">
             <DataTableToolbar
@@ -2137,7 +2296,15 @@ const AccessRequestsListPage = defineComponent({
               :show-refresh-button="true"
               :show-columns-button="true"
               :show-download-button="true"
-              :show-save-view-button="false"
+              :show-save-view-button="true"
+              :show-add-new-view="true"
+              :saved-views="savedViews"
+              :default-views="requestQueueDefaultViews"
+              :selected-view-id="selectedViewId"
+              :show-save-view-panel="showSaveViewPanel"
+              :save-view-panel-mode="saveViewPanelMode"
+              :editing-view-name="editingViewName"
+              :editing-view-is-private="editingViewIsPrivate"
               :active-filters="appliedFilters"
               :export-options="exportOptions"
               @filter-remove="handleFilterRemove"
@@ -2146,6 +2313,15 @@ const AccessRequestsListPage = defineComponent({
               @filter="handleFilter"
               @refresh="handleRefresh"
               @export-select="handleExportSelect"
+              @save-view="handleSaveView"
+              @add-new-view="handleAddNewView"
+              @save-view-submit="handleSaveViewSubmit"
+              @save-view-cancel="handleSaveViewCancel"
+              @view-select="handleViewSelect"
+              @view-favorite="handleViewFavorite"
+              @view-unfavorite="handleViewUnfavorite"
+              @view-edit="handleViewEdit"
+              @view-delete="handleViewDelete"
             >
               <template #right-section>
                 <span class="text-body-sm text-neutral-subtle">Last refreshed an hour ago</span>
