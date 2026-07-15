@@ -1,0 +1,48 @@
+name: Deploy Access Requests (SAM)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, circuit-access-requests-demo, access-requests-list-page]
+    paths:
+      - 'infra/**'
+      - 'backend/**'
+      - 'scripts/deploy-sam.sh'
+      - 'vite.config.access-requests.ts'
+      - 'src/stories/projects/access-requests/**'
+      - 'src/public-demos/**'
+      - '.github/workflows/deploy-sam-access-requests.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-2
+          role-to-assume: arn:aws:iam::642920845081:role/GithubActionsCI-circuit-playground
+          role-session-name: GithubActionsSamDeploy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        run: |
+          export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain jumpcloud-artifacts --query authorizationToken --output text)
+          npm install -g pnpm
+          pnpm config set "//jumpcloud-artifacts-642920845081.d.codeartifact.us-east-2.amazonaws.com/npm/jumpcloud-node-modules/:_authToken" "${CODEARTIFACT_AUTH_TOKEN}"
+          pnpm install --frozen-lockfile
+
+      - name: Install SAM CLI
+        run: |
+          pip install aws-sam-cli
+
+      - name: Deploy with SAM
+        run: bash scripts/deploy-sam.sh

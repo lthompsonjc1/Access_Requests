@@ -1,4 +1,4 @@
-import { ref, computed, markRaw, defineComponent, watch } from 'vue';
+import { ref, computed, markRaw, defineComponent, onMounted, watch } from 'vue';
 import {
   AppNavigation,
   PageHeader,
@@ -45,6 +45,11 @@ import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 import TopBar from '@/components/TopBar.vue';
 import { getDefaultRequestQueueSubTab } from '../shared/accessRequestPreferences';
+import {
+  fetchSavedViews,
+  isAccessRequestsApiConfigured,
+  saveSavedViews,
+} from '../shared/accessRequestsApi';
 import {
   ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH,
   ACCESS_REQUESTS_SETTINGS_STORY_PATH,
@@ -1362,6 +1367,58 @@ const AccessRequestsListPage = defineComponent({
     const activeRequestQueueSubTab = ref(props.initialRequestQueueSubTab);
     const activeSessionsSubTab = ref(props.initialActiveSessionsSubTab);
 
+    function cloneSavedViews(views: RequestQueueSavedView[]): RequestQueueSavedView[] {
+      return views.map((view) => ({
+        ...view,
+        data: view.data
+          ? { filters: view.data.filters.map((filter) => ({ ...filter })) }
+          : undefined,
+      }));
+    }
+
+    async function persistSavedViewsState() {
+      if (!isAccessRequestsApiConfigured()) return;
+      try {
+        await saveSavedViews({
+          selectedViewId: selectedViewId.value,
+          views: cloneSavedViews(savedViews.value),
+        });
+      } catch (error) {
+        console.warn('Failed to persist saved views to API', error);
+      }
+    }
+
+    onMounted(() => {
+      if (!isAccessRequestsApiConfigured()) return;
+
+      void fetchSavedViews()
+        .then((payload) => {
+          if (Array.isArray(payload.views) && payload.views.length > 0) {
+            savedViews.value = cloneSavedViews(payload.views as RequestQueueSavedView[]);
+            const maxNumeric = savedViews.value.reduce((max, view) => {
+              const match = String(view.id).match(/^view-(\d+)$/);
+              if (!match) return max;
+              return Math.max(max, Number(match[1]));
+            }, 0);
+            savedViewSeq = Math.max(savedViewSeq, maxNumeric + 1);
+          }
+
+          if (payload.selectedViewId != null) {
+            selectedViewId.value = payload.selectedViewId;
+            const selected =
+              savedViews.value.find((view) => view.id === payload.selectedViewId) ??
+              requestQueueDefaultViews.find((view) => view.id === payload.selectedViewId);
+            if (selected) {
+              const filters = selected.data?.filters ?? [];
+              appliedFilters.value = filters.map((filter) => ({ ...filter }));
+            }
+          }
+        })
+        .catch((error) => {
+          console.warn('Failed to load saved views from API', error);
+        });
+    });
+
     const timedAccessRows = ref<TimedAccessSessionRow[]>([...timedAccessSessionsData]);
     const timedAccessSelection = ref<TimedAccessSessionRow[]>([]);
     const deviceAdminRows = ref<DeviceAdminSessionRow[]>(deviceAdminSessionsData.map((r) => ({ ...r })));
@@ -2017,6 +2074,7 @@ const AccessRequestsListPage = defineComponent({
       }
 
       handleSaveViewCancel();
+      void persistSavedViewsState();
     }
 
     function handleViewSelect(view: RequestQueueSavedView) {
@@ -2027,18 +2085,21 @@ const AccessRequestsListPage = defineComponent({
         [];
       appliedFilters.value = filters.map((filter) => ({ ...filter }));
       showSaveViewPanel.value = false;
+      void persistSavedViewsState();
     }
 
     function handleViewFavorite(view: RequestQueueSavedView) {
       savedViews.value = savedViews.value.map((item) =>
         item.id === view.id ? { ...item, isFavorite: true } : item,
       );
+      void persistSavedViewsState();
     }
 
     function handleViewUnfavorite(view: RequestQueueSavedView) {
       savedViews.value = savedViews.value.map((item) =>
         item.id === view.id ? { ...item, isFavorite: false } : item,
       );
+      void persistSavedViewsState();
     }
 
     function handleViewEdit(view: RequestQueueSavedView) {
@@ -2056,6 +2117,7 @@ const AccessRequestsListPage = defineComponent({
       if (editingViewId.value === view.id) {
         handleSaveViewCancel();
       }
+      void persistSavedViewsState();
     }
 
     function handleRowClick() {

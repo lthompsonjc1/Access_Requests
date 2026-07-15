@@ -96,11 +96,38 @@ This repo is set up to work with the **Figma MCP server** in Cursor:
 4. Add mock data in a `mock-data/` folder if needed.
 5. Run Storybook to see your page live.
 
+## Access Requests AWS SAM deploy
+
+`Circuit-access-requests` is hosted with **AWS SAM** (S3 + CloudFront + API Gateway + Lambda + DynamoDB), not the shared R2 public-demos pipeline.
+
+Prerequisites: AWS CLI, [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), and credentials that can create CloudFormation / S3 / CloudFront / DynamoDB / Lambda / API Gateway resources in `us-east-2`.
+
+```bash
+pnpm install
+pnpm run deploy:access-requests
+```
+
+The script prints:
+
+- **CloudFront URL** — open this for the demo UI
+- **API URL** — used as `VITE_API_BASE_URL` for preferences and saved views
+
+Local API smoke test (optional):
+
+```bash
+cd backend && npm install
+cd ../infra && sam build && sam local start-api
+curl http://127.0.0.1:3000/health
+```
+
+The previous R2 URL (`demos.jumpcloud-test.workers.dev/Circuit-access-requests-…`) is retired for this demo.
+
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `npm run storybook` | Start Storybook dev server on port 6006 |
 | `npm run build-storybook` | Build static Storybook for deployment |
+| `npm run deploy:access-requests` | Build and deploy Access Requests via SAM |
 | `npm run dev` | Start Vite dev server |
 | `npm run build` | Production build |

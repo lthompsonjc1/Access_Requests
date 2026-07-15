@@ -1,0 +1,18 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "circuit-access-requests"
+region = "us-east-2"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+parameter_overrides = "ProjectName=circuit-access-requests"
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"

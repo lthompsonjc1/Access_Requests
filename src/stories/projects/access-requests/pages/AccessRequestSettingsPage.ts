@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, watch } from 'vue';
+import { computed, defineComponent, onMounted, ref, watch } from 'vue';
 import {
   AppNavigation,
   PageHeader,
@@ -30,7 +30,8 @@ import SettingCardItem from '@/components/setting-card/SettingCardItem.vue';
 import TopBar from '@/components/TopBar.vue';
 import {
   getDefaultRequestQueueSubTab,
-  setDefaultRequestQueueSubTab,
+  loadDefaultRequestQueueSubTab,
+  persistDefaultRequestQueueSubTab,
   type RequestQueueSubTab,
 } from '../shared/accessRequestPreferences';
 import {
@@ -189,8 +190,18 @@ const AccessRequestSettingsPage = defineComponent({
       navigateToStorybookStory(ACCESS_REQUESTS_LIST_STORY_PATH);
     }
 
-    function handleSave() {
-      setDefaultRequestQueueSubTab(defaultRequestQueueSubTab.value);
+    onMounted(() => {
+      void loadDefaultRequestQueueSubTab().then((value) => {
+        defaultRequestQueueSubTab.value = value;
+      });
+    });
+
+    async function handleSave() {
+      try {
+        await persistDefaultRequestQueueSubTab(defaultRequestQueueSubTab.value);
+      } catch (error) {
+        console.warn('Failed to save default request queue sub tab', error);
+      }
       navigateToList();
     }
 
