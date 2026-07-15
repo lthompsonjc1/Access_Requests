@@ -328,6 +328,26 @@ const AccessRequestSettingsPage = defineComponent({
                 </section>
 
                 <section class="flex flex-col gap-4">
+                  <PageSection title="Approver progress indicator">
+                    <template #actions><span /></template>
+                  </PageSection>
+
+                  <div :class="settingCardClass">
+                    <SettingCardItem
+                      v-model:toggle-value="exposeApprovalProgress"
+                      title="Expose the approval progress to end users"
+                      :has-bottom-border="false"
+                    >
+                      <template #description>
+                        <span class="text-body-sm text-neutral-muted">
+                          When enabled, end users can see approval status in their portal.
+                        </span>
+                      </template>
+                    </SettingCardItem>
+                  </div>
+                </section>
+
+                <section class="flex flex-col gap-4">
                   <PageSection title="Notifications">
                     <template #actions><span /></template>
                     <template #subtitle>
@@ -370,26 +390,6 @@ const AccessRequestSettingsPage = defineComponent({
                         </CheckboxWithLabel>
                       </div>
                     </div>
-                  </div>
-                </section>
-
-                <section class="flex flex-col gap-4">
-                  <PageSection title="Approver progress indicator">
-                    <template #actions><span /></template>
-                  </PageSection>
-
-                  <div :class="settingCardClass">
-                    <SettingCardItem
-                      v-model:toggle-value="exposeApprovalProgress"
-                      title="Expose the approval progress to end users"
-                      :has-bottom-border="false"
-                    >
-                      <template #description>
-                        <span class="text-body-sm text-neutral-muted">
-                          When enabled, end users can see approval status in their portal.
-                        </span>
-                      </template>
-                    </SettingCardItem>
                   </div>
                 </section>
 

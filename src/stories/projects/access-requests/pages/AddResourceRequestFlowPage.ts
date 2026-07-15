@@ -908,15 +908,6 @@ const AddResourceRequestFlowPage = defineComponent({
                     </FormField>
 
                     <div v-if="approvalType === 'manual'" class="flex flex-col gap-md">
-                      <p class="text-body-sm text-neutral-muted">
-                        <span v-if="isNonAdminApproverFlow">
-                          Non-admin approver flow — each approver type can be used once. Administrator is only available for admin-only flows.
-                        </span>
-                        <span v-else>
-                          Admin-only flow — requests are approved by administrators. Choose a non-admin type to configure delegated steps.
-                        </span>
-                      </p>
-
                       <div
                         v-for="step in approverSteps"
                         :key="step.id"
@@ -1059,13 +1050,8 @@ const AddResourceRequestFlowPage = defineComponent({
                       v-model:toggle-value="allowSlackApprovals"
                       title="Allow Slack approvals"
                       :has-bottom-border="false"
-                    >
-                      <template #description>
-                        <span class="text-body-sm text-neutral-muted">
-                          Let approvers approve or decline requests from Slack.
-                        </span>
-                      </template>
-                    </SettingCardItem>
+                      :has-description="false"
+                    />
                   </div>
                 </section>
               </div>

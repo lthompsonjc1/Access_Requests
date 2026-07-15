@@ -7,6 +7,7 @@ import {
 import AccessRequestsListPage from './AccessRequestsListPage';
 import AccessRequestSettingsPage from './AccessRequestSettingsPage';
 import AddResourceRequestFlowPage from './AddResourceRequestFlowPage';
+import AddDeviceAdminFlowPage from './AddDeviceAdminFlowPage';
 
 const activeView = ref<AccessRequestsDemoView>('list');
 
@@ -14,6 +15,7 @@ const viewComponents: Record<AccessRequestsDemoView, Component> = {
   list: AccessRequestsListPage,
   settings: AccessRequestSettingsPage,
   'add-resource-flow': AddResourceRequestFlowPage,
+  'add-device-admin-flow': AddDeviceAdminFlowPage,
 };
 
 onMounted(() => {

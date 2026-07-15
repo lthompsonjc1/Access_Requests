@@ -121,12 +121,20 @@ export const ACCESS_REQUESTS_SETTINGS_STORY_PATH =
 export const ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH =
   '/?path=/story/projects-access-requests-pages-add-resource-request-flow--default';
 
-export type AccessRequestsDemoView = 'list' | 'settings' | 'add-resource-flow';
+export const ACCESS_REQUESTS_ADD_DEVICE_ADMIN_FLOW_STORY_PATH =
+  '/?path=/story/projects-access-requests-pages-add-device-admin-flow--default';
+
+export type AccessRequestsDemoView =
+  | 'list'
+  | 'settings'
+  | 'add-resource-flow'
+  | 'add-device-admin-flow';
 
 const STORY_PATH_TO_DEMO_VIEW: Record<string, AccessRequestsDemoView> = {
   [ACCESS_REQUESTS_LIST_STORY_PATH]: 'list',
   [ACCESS_REQUESTS_SETTINGS_STORY_PATH]: 'settings',
   [ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH]: 'add-resource-flow',
+  [ACCESS_REQUESTS_ADD_DEVICE_ADMIN_FLOW_STORY_PATH]: 'add-device-admin-flow',
 };
 
 type DemoNavigateHandler = (view: AccessRequestsDemoView) => void;

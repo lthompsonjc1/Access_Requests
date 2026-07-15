@@ -52,6 +52,7 @@ import {
 } from '../shared/accessRequestsApi';
 import {
   ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH,
+  ACCESS_REQUESTS_ADD_DEVICE_ADMIN_FLOW_STORY_PATH,
   ACCESS_REQUESTS_SETTINGS_STORY_PATH,
   menuItems,
   navigateToStorybookStory,
@@ -623,11 +624,11 @@ const ActionsCell = defineComponent({
 
     const menuItems = computed(() => [
       {
-        label: 'Approve access',
+        label: 'Grant',
         command: () => props.onApproveAccess?.(props.requestId),
       },
       {
-        label: 'Decline access',
+        label: 'Deny',
         command: () => props.onDeclineAccess?.(props.requestId),
       },
     ]);
@@ -2148,8 +2149,9 @@ const AccessRequestsListPage = defineComponent({
     function handleAddApprovalFlow(flowType: 'Resource approval' | 'Device admin') {
       if (flowType === 'Resource approval') {
         navigateToStorybookStory(ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH);
+        return;
       }
-      // Device admin create flow — placeholder
+      navigateToStorybookStory(ACCESS_REQUESTS_ADD_DEVICE_ADMIN_FLOW_STORY_PATH);
     }
 
     function navigateToSettings() {
@@ -2550,12 +2552,17 @@ const AccessRequestsListPage = defineComponent({
                   class="flex gap-sm border-t border-neutral-default_solid pt-4"
                 >
                   <Button
-                    label="Decline access"
+                    label="Deny"
                     severity="danger"
                     variant="outlined"
+                    size="small"
                     @click="openDeclineAccessDialog(data.id)"
                   />
-                  <Button label="Approve access" @click="openApproveAccessDialog(data.id)" />
+                  <Button
+                    label="Grant"
+                    size="small"
+                    @click="openApproveAccessDialog(data.id)"
+                  />
                 </div>
                 </div>
               </div>

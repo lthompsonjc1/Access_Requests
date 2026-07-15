@@ -10,6 +10,7 @@ api-reference/
 dist-demos/
 .generated-demos/
 .demo-*.html
+access-requests-demo.html
 .aws-sam/
 infra/.aws-sam/
 .wrangler/
