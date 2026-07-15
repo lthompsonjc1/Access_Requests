@@ -27,4 +27,9 @@ export const demos = [
     name: 'Agent Zero — Alternative 02',
     component: '@/stories/projects/burak-agent0/pages/Agent0Alt02Page.vue',
   },
+  {
+    id: 'Circuit-access-requests',
+    name: 'Circuit Access Requests',
+    component: '@/stories/projects/access-requests/pages/AccessRequestsDemo.vue',
+  },
 ];

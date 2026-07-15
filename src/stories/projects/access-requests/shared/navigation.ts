@@ -121,7 +121,37 @@ export const ACCESS_REQUESTS_SETTINGS_STORY_PATH =
 export const ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH =
   '/?path=/story/projects-access-requests-pages-add-resource-request-flow--default';
 
+export type AccessRequestsDemoView = 'list' | 'settings' | 'add-resource-flow';
+
+const STORY_PATH_TO_DEMO_VIEW: Record<string, AccessRequestsDemoView> = {
+  [ACCESS_REQUESTS_LIST_STORY_PATH]: 'list',
+  [ACCESS_REQUESTS_SETTINGS_STORY_PATH]: 'settings',
+  [ACCESS_REQUESTS_ADD_RESOURCE_FLOW_STORY_PATH]: 'add-resource-flow',
+};
+
+type DemoNavigateHandler = (view: AccessRequestsDemoView) => void;
+
+let demoNavigateHandler: DemoNavigateHandler | null = null;
+
+/** Used by the public demo shell to intercept Storybook URL navigation. */
+export function setAccessRequestsDemoNavigateHandler(
+  handler: DemoNavigateHandler | null,
+): void {
+  demoNavigateHandler = handler;
+}
+
+export function storyPathToDemoView(storyPath: string): AccessRequestsDemoView | null {
+  const normalizedPath = storyPath.startsWith('/') ? storyPath : `/${storyPath}`;
+  return STORY_PATH_TO_DEMO_VIEW[normalizedPath] ?? null;
+}
+
 export function navigateToStorybookStory(storyPath: string) {
+  const view = storyPathToDemoView(storyPath);
+  if (view && demoNavigateHandler) {
+    demoNavigateHandler(view);
+    return;
+  }
+
   const target = window.parent ?? window;
   const normalizedPath = storyPath.startsWith('/') ? storyPath : `/${storyPath}`;
   target.location.assign(`${target.location.origin}${normalizedPath}`);
