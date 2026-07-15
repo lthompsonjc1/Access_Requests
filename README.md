@@ -112,11 +112,19 @@ The script prints:
 - **CloudFront URL** — open this for the demo UI
 - **API URL** — used as `VITE_API_BASE_URL` for preferences and saved views
 
-Local API smoke test (optional):
+GitHub Action: `.github/workflows/deploy-sam-access-requests.yml` (`Deploy Access Requests (SAM)`). The existing `GithubActionsCI-circuit-playground` role today only covers CodeArtifact-style CI; it needs CloudFormation (and related) permissions before the workflow can finish a stack deploy. Until then, run `pnpm run deploy:access-requests` with admin/developer credentials.
+
+Template validation / build smoke test:
 
 ```bash
 cd backend && npm install
-cd ../infra && sam build && sam local start-api
+cd ../infra && sam validate && sam build
+```
+
+Local API (requires Docker):
+
+```bash
+cd infra && sam local start-api
 curl http://127.0.0.1:3000/health
 ```
 
